@@ -767,7 +767,7 @@ body {
 /* ===== GAME CARD — Horizontal Reference-Style Layout ===== */
 .game-card {
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid rgba(245, 185, 32, 0.35);
   border-radius: var(--radius-md);
   padding: 0;
   cursor: pointer;
@@ -939,18 +939,19 @@ body {
 }
 
 .odds-label {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
   min-width: 42px;
   flex-shrink: 0;
 }
 
 .odds-value {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
 }
 
 /* Column 4: Research button */
@@ -1004,7 +1005,7 @@ body {
 /* ===== UFC FIGHT CARD — dedicated layout ===== */
 .ufc-fight-card {
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid rgba(245, 185, 32, 0.35);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.15s;
@@ -2499,8 +2500,8 @@ body {
     gap: 3px;
     min-width: 0;
   }
-  .odds-label { font-size: 0.62rem; color: var(--text-dim); white-space: nowrap; }
-  .odds-value { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+  .odds-label { font-size: 0.72rem; color: var(--text-primary); white-space: nowrap; font-family: var(--font-sans); }
+  .odds-value { font-size: 0.74rem; font-weight: 600; white-space: nowrap; color: var(--text-primary); font-family: var(--font-sans); }
 
   /* Research bets: compact */
   .game-col-action { width: 100%; }
