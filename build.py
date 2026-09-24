@@ -77,12 +77,30 @@ def build():
     )
 
     # Inject JS (replace existing script block)
-    html = re.sub(
-        r'<script>[\s\S]*?</script>\s*</body>',
-        lambda m: f'<script>\n{js_bundle}\n</script>\n</body>',
-        html,
-        count=1
-    )
+    # Use a more specific pattern to only match the main script block before </body>
+    # This preserves any analytics or other scripts in the <head>
+    body_start_pos = html.find('<body>')
+    if body_start_pos != -1:
+        # Only search for script tags after <body>
+        html_before_body = html[:body_start_pos]
+        html_from_body = html[body_start_pos:]
+        
+        # Replace the first script block found after <body>
+        html_from_body = re.sub(
+            r'<script>[\s\S]*?</script>\s*</body>',
+            lambda m: f'<script>\n{js_bundle}\n</script>\n</body>',
+            html_from_body,
+            count=1
+        )
+        html = html_before_body + html_from_body
+    else:
+        # Fallback to original behavior
+        html = re.sub(
+            r'<script>[\s\S]*?</script>\s*</body>',
+            lambda m: f'<script>\n{js_bundle}\n</script>\n</body>',
+            html,
+            count=1
+        )
 
     # Ensure no duplicate SportsResearchApp() instantiation
     # The DOMContentLoaded listener in app.js handles startup — remove any bare call
