@@ -894,67 +894,106 @@ class SportsResearchApp {
       return;
     }
 
-    const bets = await this.service.getBetsForGame(this.state.selectedGameId);
-    const parlay = await this.service.getParlayForGame(this.state.selectedGameId);
-    const sortedBets = this.filterAndSortBets(bets, this.state.activeFilter);
+    const sl = game.summaryLines || {};
+    const isUFC = game.sport === 'ufc';
+    const sportLabel = (game.sport || '').toUpperCase();
+
+    // Build verified-only odds rows from live ESPN data
+    const oddsRows = [
+      sl.spread && sl.spread !== 'N/A' ? `<div class="di-odds-row"><span class="di-odds-label">${this.spreadLabel(game.sport)}</span><span class="di-odds-val">${sl.spread}</span><span class="di-source">ESPN</span></div>` : '',
+      sl.total  && sl.total  !== 'N/A' ? `<div class="di-odds-row"><span class="di-odds-label">Total O/U</span><span class="di-odds-val">${sl.total}</span><span class="di-source">ESPN</span></div>` : '',
+      sl.ml     && sl.ml     !== 'N/A' ? `<div class="di-odds-row"><span class="di-odds-label">Moneyline</span><span class="di-odds-val">${sl.ml}</span><span class="di-source">ESPN</span></div>` : '',
+    ].filter(Boolean).join('');
+
+    const awayLogo = this.teamLogoHtml(game.awayTeam);
+    const homeLogo = this.teamLogoHtml(game.homeTeam);
 
     this.dom.gameDetailContainer.innerHTML = `
+      <!-- Back nav -->
       <div class="game-view-header">
-        <button class="back-btn" id="back-to-games-btn">← All ${game.sport.toUpperCase()} Games</button>
-        <div class="game-detail-banner">
-          <div class="matchup-headline">
-            ${game.awayTeam.name} @ ${game.homeTeam.name}
+        <button class="back-btn" id="back-to-games-btn">← All ${sportLabel} Games</button>
+      </div>
+
+      <!-- ── VERIFIED: Game matchup from ESPN live feed ─────────────── -->
+      <div class="di-matchup-card">
+        <div class="di-verified-badge">✓ VERIFIED — ESPN Live Feed</div>
+
+        <div class="di-matchup-teams">
+          <div class="di-team-row">
+            ${awayLogo}
+            <div class="di-team-info">
+              <span class="di-team-name">${game.awayTeam.name}</span>
+              <span class="di-team-record">${game.awayTeam.record || ''}</span>
+            </div>
+            <span class="di-at-label">${isUFC ? 'vs' : '@'}</span>
           </div>
-          <div class="matchup-subline">
-            <span>📅 ${game.date} • ${game.startTime}</span>
-            <span>📍 ${game.venue}</span>
-            <span>🏆 ${game.headline}</span>
+          <div class="di-team-row">
+            ${homeLogo}
+            <div class="di-team-info">
+              <span class="di-team-name">${game.homeTeam.name}</span>
+              <span class="di-team-record">${game.homeTeam.record || ''}</span>
+            </div>
           </div>
+        </div>
+
+        <div class="di-game-meta">
+          <span>📅 ${game.date} · ${game.startTime}</span>
+          ${game.venue ? `<span>📍 ${game.venue}</span>` : ''}
+          ${game.headline && game.headline !== game.awayTeam.name + ' @ ' + game.homeTeam.name ? `<span>🏆 ${game.headline}</span>` : ''}
+        </div>
+
+        ${oddsRows ? `
+        <div class="di-odds-section">
+          <div class="di-section-label">CURRENT LINES — DraftKings / Fliff</div>
+          ${oddsRows}
+        </div>` : `
+        <div class="di-odds-section">
+          <div class="di-unavail-inline">Betting lines unavailable for this event</div>
+        </div>`}
+      </div>
+
+      <!-- ── DATA TRANSPARENCY NOTICE ───────────────────────────────── -->
+      <div class="di-notice-card">
+        <div class="di-notice-header">
+          <span class="di-notice-icon">⚠️</span>
+          <span class="di-notice-title">Player Prop Research — Data Unavailable</span>
+        </div>
+        <div class="di-notice-body">
+          <p>Historical player game logs and prop lines require a licensed sports data provider.</p>
+          <p>Displaying fabricated stats would be misleading — this app cannot verify:</p>
+          <ul class="di-unavail-list">
+            <li>Individual player game logs (last 3 / 5 / 10)</li>
+            <li>Historical prop lines from DraftKings or Fliff</li>
+            <li>Per-game over/under results vs historical lines</li>
+            <li>Hit rates calculated from those results</li>
+          </ul>
+          <p class="di-data-note">
+            <strong>What IS accurate above:</strong> game schedule, team records, current spread/total/moneyline — all pulled directly from ESPN's public API in real time.
+          </p>
+          <p class="di-data-note">
+            <strong>What would make prop research accurate:</strong> a licensed data API such as
+            <em>The Odds API</em>, <em>Sportradar</em>, or <em>SportsData.io</em>
+            to supply real game-by-game player stats and historical prop lines.
+          </p>
+        </div>
+        <div class="di-principle">
+          <span class="di-principle-icon">🎯</span>
+          <span>Accurate unavailability &gt; inaccurate data. We will not fabricate statistics.</span>
         </div>
       </div>
 
-      <!-- Parlay Research & Floor Analysis Hero Card -->
-      ${parlay ? this.renderParlayCard(parlay) : ''}
-
-      <!-- Sorting & Filter Controls -->
-      <div class="filter-bar" id="bet-filter-bar">
-        <button class="filter-pill ${this.state.activeFilter === 'higher_rate' ? 'active' : ''}" data-filter="higher_rate">
-          Higher Hit Rate
-        </button>
-        <button class="filter-pill ${this.state.activeFilter === 'lower_rate' ? 'active' : ''}" data-filter="lower_rate">
-          Lower Hit Rate
-        </button>
-        <button class="filter-pill ${this.state.activeFilter === 'player_props' ? 'active' : ''}" data-filter="player_props">
-          Player Props
-        </button>
-        <button class="filter-pill ${this.state.activeFilter === 'game_lines' ? 'active' : ''}" data-filter="game_lines">
-          Game Lines
-        </button>
-        <button class="filter-pill ${this.state.activeFilter === 'all' ? 'active' : ''}" data-filter="all">
-          All Bets (${bets.length})
-        </button>
-      </div>
-
-      <div class="research-disclaimer">
-        <span>ℹ️</span>
-        <span>Sorted strictly by recent performance against the live market line. Historical performance does NOT guarantee future outcomes.</span>
-      </div>
-
-      <!-- Bet Cards List -->
-      <div class="bets-container">
-        ${sortedBets.map(bet => this.renderBetCard(bet)).join('')}
+      <!-- ── PARLAY NOTICE ──────────────────────────────────────────── -->
+      <div class="di-parlay-notice">
+        <span class="di-parlay-icon">📊</span>
+        <div>
+          <div class="di-parlay-title">Parlay Recommendations Paused</div>
+          <div class="di-parlay-sub">Parlay picks require verified per-player hit rates. They will re-enable when a licensed data source is connected.</div>
+        </div>
       </div>
     `;
 
     document.getElementById('back-to-games-btn').addEventListener('click', () => {
       this.goBackToGames();
-    });
-
-    document.getElementById('bet-filter-bar').querySelectorAll('.filter-pill').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.state.activeFilter = btn.dataset.filter;
-        this.renderGameDetailPage();
-      });
     });
 
     const copyBtn = document.getElementById('copy-parlay-btn');
