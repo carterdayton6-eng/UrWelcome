@@ -355,6 +355,142 @@ class SportsResearchApp {
   }
 
 
+
+  // ─── Render verified player stats from ESPN game logs ───────────────────────
+  // Called with researchData from PlayerGameLogService.getGameResearchData()
+  // Falls back to data-unavailable notice if researchData is null/empty.
+  _renderResearchStats(researchData, game) {
+    // UFC: show honest note (no per-fighter game logs via ESPN public API)
+    if (game && game.sport === 'ufc') {
+      return `<div class="di-notice-card">
+        <div class="di-notice-header">
+          <span class="di-notice-icon">ℹ️</span>
+          <span class="di-notice-title">UFC Fighter Stats</span>
+        </div>
+        <div class="di-notice-body">
+          <p>Individual UFC fighter historical game logs are not available through ESPN's public API. Fight result data appears in scoreboard feeds after events complete.</p>
+        </div>
+      </div>`;
+    }
+
+    // No data returned — show transparent notice
+    if (!researchData || (!researchData.awayTeam?.players?.length && !researchData.homeTeam?.players?.length)) {
+      return `<div class="di-notice-card">
+        <div class="di-notice-header">
+          <span class="di-notice-icon">ℹ️</span>
+          <span class="di-notice-title">Player Stats — Loading or Unavailable</span>
+        </div>
+        <div class="di-notice-body">
+          <p>Player game log data could not be loaded. This happens when both teams have no completed games yet this season, or the ESPN API request timed out.</p>
+          <p class="di-data-note"><strong>What IS verified above:</strong> game schedule, team records, and current betting lines from ESPN's live feed.</p>
+        </div>
+        <div class="di-principle">
+          <span class="di-principle-icon">🎯</span>
+          <span>We only show verified statistics. Unavailable > fabricated.</span>
+        </div>
+      </div>`;
+    }
+
+    const renderTeamSection = (teamData, label) => {
+      if (!teamData?.players?.length) return '';
+      
+      // Prioritize skill-position groups
+      const priority = ['passing','rushing','receiving','batting','pitching','skating','scoring','defensive','goaltending'];
+      const sorted = [...teamData.players].sort((a, b) => {
+        const ai = priority.indexOf(a.statGroup);
+        const bi = priority.indexOf(b.statGroup);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+
+      // Deduplicate: one row per player (show their primary/best stat group only)
+      const seen = new Set();
+      const unique = sorted.filter(p => {
+        if (seen.has(p.playerId)) return false;
+        seen.add(p.playerId);
+        return true;
+      });
+
+      // Only show top 6 players
+      const top = unique.slice(0, 6);
+      if (!top.length) return '';
+
+      const rows = top.map(p => {
+        const gamesHtml = p.games.slice(0, 3).map(g => {
+          const ps = g.primaryStat;
+          const statDisplay = ps ? `${this._friendlyStatKey(ps.key)}: ${ps.value}` : 'No data';
+          return `<div class="di-game-log-entry">
+            <span class="di-game-log-date">${g.gameDateStr}</span>
+            <span class="di-game-log-opp">vs ${g.opponentAbbr || g.opponentName}</span>
+            <span class="di-game-log-stat">${statDisplay}</span>
+            <span class="di-game-log-verified" title="Verified from ESPN boxscore">✓</span>
+          </div>`;
+        }).join('');
+
+        const groupLabel = {'passing':'Passing','rushing':'Rushing','receiving':'Receiving',
+          'defensive':'Defense','batting':'Batting','pitching':'Pitching',
+          'skating':'Skating','scoring':'Scoring','goaltending':'Goaltending'}[p.statGroup] || p.statGroup;
+
+        return `<div class="di-player-row">
+          <div class="di-player-header">
+            <span class="di-player-name">${p.playerName}</span>
+            <span class="di-player-group">${groupLabel}</span>
+          </div>
+          <div class="di-game-log-list">
+            ${gamesHtml || '<div class="di-game-log-empty">No completed games yet</div>'}
+          </div>
+        </div>`;
+      }).join('');
+
+      return `<div class="di-team-stats-section">
+        <div class="di-team-stats-header">
+          <span class="di-team-stats-name">${label}</span>
+          <span class="di-verified-inline">✓ ESPN Boxscore</span>
+        </div>
+        <div class="di-player-list">${rows}</div>
+      </div>`;
+    };
+
+    const awaySec = renderTeamSection(researchData.awayTeam, researchData.awayTeam.name || 'Away Team');
+    const homeSec = renderTeamSection(researchData.homeTeam, researchData.homeTeam.name || 'Home Team');
+
+    if (!awaySec && !homeSec) {
+      return `<div class="di-notice-card">
+        <div class="di-notice-header"><span class="di-notice-icon">ℹ️</span><span class="di-notice-title">No Completed Games This Season</span></div>
+        <div class="di-notice-body"><p>No completed games were found for either team. Check back once the season is underway.</p></div>
+      </div>`;
+    }
+
+    return `
+      <div class="di-stats-container">
+        <div class="di-stats-header-row">
+          <span class="di-stats-title">RECENT PLAYER STATS</span>
+          <span class="di-stats-source">ESPN Boxscore Data · Verified</span>
+        </div>
+        <div class="di-stats-note">Game logs from last 3 completed games · Sorted most recent first · No fabricated stats</div>
+        ${awaySec}${homeSec}
+      </div>
+      <div class="di-prop-lines-notice">
+        <span>📋</span>
+        <span>Player prop lines (Over/Under thresholds) require a licensed sportsbook API. Stats above are raw game results only — no sportsbook lines are applied.</span>
+      </div>`;
+  }
+
+  _friendlyStatKey(key) {
+    const map = {
+      passingYards: 'Pass Yds', rushingYards: 'Rush Yds', receivingYards: 'Rec Yds',
+      passingTouchdowns: 'Pass TD', rushingTouchdowns: 'Rush TD', receivingTouchdowns: 'Rec TD',
+      receptions: 'Rec', receivingTargets: 'Tgt',
+      'completions/passingAttempts': 'Comp/Att',
+      interceptions: 'INT', sacks: 'Sacks', totalTackles: 'Tackles',
+      hits: 'H', atBats: 'AB', runs: 'R', RBIs: 'RBI', homeRuns: 'HR',
+      walks: 'BB', strikeouts: 'K', earnedRuns: 'ER',
+      'fullInnings.partInnings': 'IP',
+      points: 'Pts', rebounds: 'Reb', assists: 'Ast',
+      goals: 'G', goalAssists: 'A', saves: 'SV', shotsOnGoal: 'SOG',
+    };
+    return map[key] || key.replace(/([A-Z])/g, ' $1').trim();
+  }
+
   bindCardClicks(container) {
     // Wire each card: Research Bets button flashes yellow, then navigates
     container.querySelectorAll('.game-card, .ufc-fight-card').forEach(card => {
@@ -894,6 +1030,16 @@ class SportsResearchApp {
       return;
     }
 
+    // Fetch real verified player game logs from ESPN (non-blocking — loads alongside UI)
+    let researchData = null;
+    try {
+      if (typeof playerGameLogService !== 'undefined' && game.sport !== 'ufc') {
+        researchData = await playerGameLogService.getGameResearchData(game);
+      }
+    } catch (err) {
+      console.warn('[Research] playerGameLogService failed:', err.message);
+    }
+
     const sl = game.summaryLines || {};
     const isUFC = game.sport === 'ufc';
     const sportLabel = (game.sport || '').toUpperCase();
@@ -952,44 +1098,8 @@ class SportsResearchApp {
         </div>`}
       </div>
 
-      <!-- ── DATA TRANSPARENCY NOTICE ───────────────────────────────── -->
-      <div class="di-notice-card">
-        <div class="di-notice-header">
-          <span class="di-notice-icon">⚠️</span>
-          <span class="di-notice-title">Player Prop Research — Data Unavailable</span>
-        </div>
-        <div class="di-notice-body">
-          <p>Historical player game logs and prop lines require a licensed sports data provider.</p>
-          <p>Displaying fabricated stats would be misleading — this app cannot verify:</p>
-          <ul class="di-unavail-list">
-            <li>Individual player game logs (last 3 / 5 / 10)</li>
-            <li>Historical prop lines from DraftKings or Fliff</li>
-            <li>Per-game over/under results vs historical lines</li>
-            <li>Hit rates calculated from those results</li>
-          </ul>
-          <p class="di-data-note">
-            <strong>What IS accurate above:</strong> game schedule, team records, current spread/total/moneyline — all pulled directly from ESPN's public API in real time.
-          </p>
-          <p class="di-data-note">
-            <strong>What would make prop research accurate:</strong> a licensed data API such as
-            <em>The Odds API</em>, <em>Sportradar</em>, or <em>SportsData.io</em>
-            to supply real game-by-game player stats and historical prop lines.
-          </p>
-        </div>
-        <div class="di-principle">
-          <span class="di-principle-icon">🎯</span>
-          <span>Accurate unavailability &gt; inaccurate data. We will not fabricate statistics.</span>
-        </div>
-      </div>
-
-      <!-- ── PARLAY NOTICE ──────────────────────────────────────────── -->
-      <div class="di-parlay-notice">
-        <span class="di-parlay-icon">📊</span>
-        <div>
-          <div class="di-parlay-title">Parlay Recommendations Paused</div>
-          <div class="di-parlay-sub">Parlay picks require verified per-player hit rates. They will re-enable when a licensed data source is connected.</div>
-        </div>
-      </div>
+      <!-- ── PLAYER STATS — Real ESPN data or honest unavailable notice ── -->
+      \${this._renderResearchStats(researchData, game)}
     `;
 
     document.getElementById('back-to-games-btn').addEventListener('click', () => {

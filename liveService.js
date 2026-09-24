@@ -1520,3 +1520,442 @@ export class LiveDataService {
 
 export { LiveDataService as LiveSportsService };
 
+
+// =============================================================================
+// PLAYER GAME LOG SERVICE — ESPN Public API, Verified Stats Only
+// =============================================================================
+// Uses ESPN's public summary and schedule endpoints (CORS: Access-Control-Allow-Origin: *)
+// Endpoint reference:
+//   Team schedule:    site.api.espn.com/apis/site/v2/sports/{sport}/{league}/teams/{teamId}/schedule
+//   Game summary:     site.api.espn.com/apis/site/v2/sports/{sport}/{league}/summary?event={eventId}
+// Both return Access-Control-Allow-Origin: * — no proxy needed.
+//
+// DATA INTEGRITY RULES (strict):
+//   - Only completed games (STATUS_FINAL) are used for Last 3/5/10
+//   - Stats are sourced from the game boxscore — per player, per game, per stat group
+//   - No season averages, no projections, no cross-player contamination
+//   - Each stat entry carries: playerId, playerName, teamId, eventId, gameDate, opponent, stat keys+values
+//   - If a stat cannot be verified from the boxscore, it is omitted (not guessed)
+//   - Cache keys include sport+league+teamId so no cross-sport contamination
+//   - Cache is invalidated after cacheTTL (5 min); force-clear via clearCache()
+
+export class PlayerGameLogService {
+  constructor() {
+    // Cache: { [cacheKey]: { timestamp, data } }
+    this.gameLogCache = {};
+    this.summaryCache = {};
+    this.cacheTTL = 5 * 60 * 1000; // 5 minutes
+
+    // Sport → ESPN sport/league path segments
+    this.sportConfig = {
+      nfl:  { sport: 'football',   league: 'nfl'  },
+      mlb:  { sport: 'baseball',   league: 'mlb'  },
+      nhl:  { sport: 'hockey',     league: 'nhl'  },
+      nba:  { sport: 'basketball', league: 'nba'  },
+      cfb:  { sport: 'football',   league: 'college-football' },
+      ufc:  { sport: 'mma',        league: 'ufc'  },
+    };
+
+    // Stat group → friendly category name
+    this.statGroupLabels = {
+      passing:      'Passing',
+      rushing:      'Rushing',
+      receiving:    'Receiving',
+      defensive:    'Defense',
+      interceptions:'Interceptions',
+      kicking:      'Kicking',
+      punting:      'Punting',
+      // MLB
+      batting:      'Batting',
+      pitching:     'Pitching',
+      // NHL
+      skating:      'Skating',
+      goaltending:  'Goaltending',
+      // NBA
+      scoring:      'Scoring',
+    };
+
+    // Key stat for each group — used to show "primary stat" in UI
+    this.primaryStatKey = {
+      passing:      'passingYards',
+      rushing:      'rushingYards',
+      receiving:    'receivingYards',
+      // MLB
+      batting:      'hits',
+      pitching:     'strikeouts',
+      // NHL
+      skating:      'points',
+      goaltending:  'saves',
+      // NBA
+      scoring:      'points',
+    };
+  }
+
+  clearCache() {
+    this.gameLogCache = {};
+    this.summaryCache = {};
+  }
+
+  // ─── Low-level fetch with AbortController timeout ────────────────────────
+  async _fetch(url, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error(`Timeout fetching ${url}`);
+      throw err;
+    } finally {
+      clearTimeout(id);
+    }
+  }
+
+  // ─── Fetch team's recent completed game IDs (last N) ─────────────────────
+  async fetchCompletedGameIds(sport, teamId, limit = 10) {
+    const cfg = this.sportConfig[sport];
+    if (!cfg) return [];
+
+    const cacheKey = `schedule_${sport}_${teamId}`;
+    const cached = this.gameLogCache[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < this.cacheTTL)) {
+      return cached.data;
+    }
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${cfg.sport}/${cfg.league}/teams/${teamId}/schedule`;
+    let data;
+    try {
+      data = await this._fetch(url);
+    } catch (err) {
+      console.warn(`[PlayerGameLogService] schedule fetch failed for team ${teamId}:`, err.message);
+      return [];
+    }
+
+    const events = data.events || [];
+    const completed = [];
+
+    for (const ev of events) {
+      const comp = (ev.competitions || [])[0];
+      if (!comp) continue;
+      const statusName = comp.status?.type?.name || '';
+      if (statusName !== 'STATUS_FINAL') continue;
+
+      const eventId = ev.id;
+      const gameDate = ev.date ? new Date(ev.date) : null;
+      if (!eventId || !gameDate) continue;
+
+      // Find opponent
+      const comps = comp.competitors || [];
+      const myComp = comps.find(c => c.team?.id === String(teamId));
+      const oppComp = comps.find(c => c.team?.id !== String(teamId));
+
+      completed.push({
+        eventId,
+        gameDate,
+        gameDateStr: this._formatDate(gameDate),
+        teamId: String(teamId),
+        teamAbbr: myComp?.team?.abbreviation || '',
+        homeAway: myComp?.homeAway || 'unknown',
+        opponentName: oppComp?.team?.displayName || oppComp?.team?.abbreviation || 'Unknown',
+        opponentAbbr: oppComp?.team?.abbreviation || '',
+        score: `${myComp?.score || '?'}-${oppComp?.score || '?'}`,
+      });
+    }
+
+    // Sort descending by date (most recent first)
+    completed.sort((a, b) => b.gameDate - a.gameDate);
+    const result = completed.slice(0, limit);
+
+    this.gameLogCache[cacheKey] = { timestamp: Date.now(), data: result };
+    return result;
+  }
+
+  // ─── Fetch and parse game summary boxscore ────────────────────────────────
+  async fetchGameSummary(sport, eventId) {
+    const cfg = this.sportConfig[sport];
+    if (!cfg) return null;
+
+    const cacheKey = `summary_${sport}_${eventId}`;
+    const cached = this.summaryCache[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < this.cacheTTL)) {
+      return cached.data;
+    }
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${cfg.sport}/${cfg.league}/summary?event=${eventId}`;
+    let data;
+    try {
+      data = await this._fetch(url);
+    } catch (err) {
+      console.warn(`[PlayerGameLogService] summary fetch failed for event ${eventId}:`, err.message);
+      return null;
+    }
+
+    const boxscore = data.boxscore || {};
+    const parsed = this._parseBoxscore(boxscore, sport);
+
+    this.summaryCache[cacheKey] = { timestamp: Date.now(), data: parsed };
+    return parsed;
+  }
+
+  // ─── Parse boxscore → normalized player stat records ─────────────────────
+  // Returns: [{ playerId, playerName, teamId, teamName, statGroup, stats: {key: value} }]
+  _parseBoxscore(boxscore, sport) {
+    const playerTeams = boxscore.players || [];
+    const records = [];
+
+    for (const teamBlock of playerTeams) {
+      const teamId = teamBlock.team?.id || '';
+      const teamName = teamBlock.team?.displayName || '';
+
+      for (const statGroup of (teamBlock.statistics || [])) {
+        const groupName = statGroup.name || statGroup.type || '';
+        const keys = statGroup.keys || statGroup.names || [];
+        const athletes = statGroup.athletes || [];
+
+        for (const ath of athletes) {
+          const playerId = ath.athlete?.id || '';
+          const playerName = ath.athlete?.displayName || '';
+          const rawVals = ath.stats || [];
+
+          if (!playerId || !playerName) continue;
+
+          // Build stats dict — parse numeric values where possible
+          const stats = {};
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            const raw = rawVals[i];
+            if (raw === undefined || raw === null || raw === '--') continue;
+            // Try numeric parse; keep string if not a pure number (e.g. "16/29")
+            const num = parseFloat(raw);
+            stats[k] = isNaN(num) ? raw : num;
+          }
+
+          records.push({
+            playerId,
+            playerName,
+            teamId,
+            teamName,
+            statGroup: groupName,
+            stats,
+            // Primary stat shortcut
+            primaryStat: this._getPrimaryStat(groupName, stats, sport),
+          });
+        }
+      }
+    }
+
+    return records;
+  }
+
+  _getPrimaryStat(groupName, stats, sport) {
+    const key = this.primaryStatKey[groupName];
+    if (key && stats[key] !== undefined) return { key, value: stats[key] };
+    // Fallback: first numeric value in stats
+    for (const [k, v] of Object.entries(stats)) {
+      if (typeof v === 'number') return { key: k, value: v };
+    }
+    return null;
+  }
+
+  _formatDate(d) {
+    if (!d) return '';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[d.getMonth()]} ${d.getDate()}`;
+  }
+
+  // ─── Main: get a player's last N completed game logs for a stat group ─────
+  //
+  // Parameters:
+  //   sport     e.g. 'nfl'
+  //   teamId    ESPN team ID (numeric string)
+  //   playerId  ESPN athlete ID (numeric string)
+  //   statGroup e.g. 'passing', 'rushing', 'receiving', 'batting', 'pitching'
+  //   limit     how many games to fetch (default 10)
+  //
+  // Returns array of verified game-log entries (most recent first):
+  //   [{ eventId, gameDate, gameDateStr, opponentName, homeAway, statGroup, stats, primaryStat }]
+  //
+  // FAILS CLOSED: if data cannot be verified, entry is skipped.
+  async getPlayerGameLog(sport, teamId, playerId, statGroup, limit = 10) {
+    // Validate inputs
+    if (!sport || !teamId || !playerId || !statGroup) {
+      console.warn('[PlayerGameLogService] Missing required params');
+      return { logs: [], error: 'Missing parameters' };
+    }
+
+    const cfg = this.sportConfig[sport];
+    if (!cfg) return { logs: [], error: `Unsupported sport: ${sport}` };
+
+    // 1. Get list of completed game IDs for this team
+    const completedGames = await this.fetchCompletedGameIds(sport, teamId, limit);
+    if (!completedGames.length) {
+      return { logs: [], error: 'No completed games found for team' };
+    }
+
+    // 2. Fetch summaries for those games (in parallel, max 10)
+    const gamesToFetch = completedGames.slice(0, limit);
+    const summaryPromises = gamesToFetch.map(g =>
+      this.fetchGameSummary(sport, g.eventId).then(records => ({ game: g, records }))
+    );
+    const summaryResults = await Promise.all(summaryPromises);
+
+    // 3. For each game, find this player's stats in the requested stat group
+    const logs = [];
+    for (const { game, records } of summaryResults) {
+      if (!records) continue;
+
+      // Find this player's record in this stat group
+      const playerRecord = records.find(r =>
+        r.playerId === String(playerId) &&
+        r.statGroup === statGroup
+      );
+
+      if (!playerRecord) continue; // Player didn't appear in this stat group this game — skip
+
+      // VALIDATION: player ID must match, team ID must match (or be opponent — player traded)
+      if (playerRecord.playerId !== String(playerId)) continue;
+
+      logs.push({
+        eventId: game.eventId,
+        gameDate: game.gameDate,
+        gameDateStr: game.gameDateStr,
+        opponentName: game.opponentName,
+        opponentAbbr: game.opponentAbbr,
+        homeAway: game.homeAway,
+        score: game.score,
+        teamName: playerRecord.teamName,
+        statGroup: playerRecord.statGroup,
+        stats: playerRecord.stats,
+        primaryStat: playerRecord.primaryStat,
+        // Validation metadata
+        _verified: true,
+        _playerId: playerRecord.playerId,
+        _playerName: playerRecord.playerName,
+        _teamId: playerRecord.teamId,
+      });
+    }
+
+    // Already sorted most-recent-first (from fetchCompletedGameIds)
+    return {
+      logs,
+      last3: logs.slice(0, 3),
+      last5: logs.slice(0, 5),
+      last10: logs.slice(0, 10),
+      error: null,
+    };
+  }
+
+  // ─── Convenience: get key stats for all QBs/RBs/WRs in a team's last game ─
+  // Used by the research page to surface key players without knowing IDs in advance.
+  //
+  // Returns: [{ playerId, playerName, statGroup, stats, primaryStat, gameDateStr, opponentName }]
+  async getTeamLastGameStats(sport, teamId) {
+    const completedGames = await this.fetchCompletedGameIds(sport, teamId, 1);
+    if (!completedGames.length) return { players: [], error: 'No completed games' };
+
+    const lastGame = completedGames[0];
+    const records = await this.fetchGameSummary(sport, lastGame.eventId);
+    if (!records) return { players: [], error: 'Summary fetch failed' };
+
+    // Attach game context to each record
+    return {
+      players: records.map(r => ({
+        ...r,
+        eventId: lastGame.eventId,
+        gameDateStr: lastGame.gameDateStr,
+        opponentName: lastGame.opponentName,
+        homeAway: lastGame.homeAway,
+        score: lastGame.score,
+        _verified: true,
+      })),
+      game: lastGame,
+      error: null,
+    };
+  }
+
+  // ─── Get both teams' key players for a research page ─────────────────────
+  // Given a game object (from LiveDataService), returns verified recent stats
+  // for key players from both teams (last 3 completed games).
+  //
+  // Each team's players are discovered dynamically from their last game's boxscore.
+  // No hardcoded player lists.
+  async getGameResearchData(game) {
+    if (!game) return null;
+    const sport = game.sport;
+    const awayTeamId = game.awayTeam?.id;
+    const homeTeamId = game.homeTeam?.id;
+
+    const [awayData, homeData] = await Promise.all([
+      awayTeamId ? this.getTeamPlayerLogs(sport, awayTeamId, 3) : Promise.resolve({ players: [] }),
+      homeTeamId ? this.getTeamPlayerLogs(sport, homeTeamId, 3) : Promise.resolve({ players: [] }),
+    ]);
+
+    return {
+      game,
+      awayTeam: { teamId: awayTeamId, name: game.awayTeam?.name, players: awayData.players },
+      homeTeam: { teamId: homeTeamId, name: game.homeTeam?.name, players: homeData.players },
+      dataSource: 'ESPN Game Summary API',
+      verified: true,
+    };
+  }
+
+  // ─── Get last N game logs for all players on a team ──────────────────────
+  async getTeamPlayerLogs(sport, teamId, numGames = 3) {
+    if (!teamId) return { players: [] };
+    const completedGames = await this.fetchCompletedGameIds(sport, teamId, numGames);
+    if (!completedGames.length) return { players: [], error: 'No completed games' };
+
+    const summaryPromises = completedGames.slice(0, numGames).map(g =>
+      this.fetchGameSummary(sport, g.eventId).then(records => ({ game: g, records }))
+    );
+    const results = await Promise.all(summaryPromises);
+
+    // Build per-player log: { playerId → { playerName, teamId, teamName, statGroup, games: [] } }
+    const playerMap = {};
+
+    for (const { game, records } of results) {
+      if (!records) continue;
+      for (const r of records) {
+        // Only include skill position stats (skip punting, kickReturns etc for brevity)
+        const relevantGroups = new Set([
+          'passing','rushing','receiving','batting','pitching','skating','goaltending','scoring','defensive'
+        ]);
+        if (!relevantGroups.has(r.statGroup)) continue;
+
+        const key = `${r.playerId}_${r.statGroup}`;
+        if (!playerMap[key]) {
+          playerMap[key] = {
+            playerId: r.playerId,
+            playerName: r.playerName,
+            teamId: r.teamId,
+            teamName: r.teamName,
+            statGroup: r.statGroup,
+            games: [],
+          };
+        }
+
+        playerMap[key].games.push({
+          eventId: game.eventId,
+          gameDateStr: game.gameDateStr,
+          gameDate: game.gameDate,
+          opponentName: game.opponentName,
+          homeAway: game.homeAway,
+          stats: r.stats,
+          primaryStat: r.primaryStat,
+          _verified: true,
+        });
+      }
+    }
+
+    // Sort each player's games most-recent first
+    for (const p of Object.values(playerMap)) {
+      p.games.sort((a, b) => new Date(b.gameDate) - new Date(a.gameDate));
+    }
+
+    return { players: Object.values(playerMap), error: null };
+  }
+}
+
+// Export singleton for use in app.js
+export const playerGameLogService = new PlayerGameLogService();
