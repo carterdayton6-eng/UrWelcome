@@ -350,12 +350,35 @@ class SportsResearchApp {
       this.dom.gamesList.innerHTML = allGames.map(g =>
         g.sport === 'ufc' ? this.renderUFCFightCard(g) : this.renderGameCard(g)
       ).join('');
-      this.dom.gamesList.querySelectorAll('.game-card, .ufc-fight-card').forEach(card => {
-        card.addEventListener('click', () => this.selectGame(card.dataset.gameId));
-      });
+      this.bindCardClicks(this.dom.gamesList);
     } catch(e) { console.error(e); }
   }
 
+
+  bindCardClicks(container) {
+    // Wire each card: Research Bets button flashes yellow, then navigates
+    container.querySelectorAll('.game-card, .ufc-fight-card').forEach(card => {
+      const btn = card.querySelector('.research-bets-btn, .ufc-research-btn');
+
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const gameId = card.dataset.gameId;
+          btn.classList.add('btn-flash');
+          setTimeout(() => {
+            btn.classList.remove('btn-flash');
+            this.selectGame(gameId);
+          }, 180);
+        });
+      }
+
+      // Card-level click (anywhere outside the button) still navigates instantly
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.research-bets-btn, .ufc-research-btn')) return;
+        this.selectGame(card.dataset.gameId);
+      });
+    });
+  }
 
   bindEvents() {
     // LIVE DATA badge — tap to refresh live ESPN data
@@ -685,12 +708,8 @@ class SportsResearchApp {
         return this.renderGameCard(game);
       }).join('');
 
-      this.dom.gamesList.querySelectorAll('.game-card, .ufc-fight-card').forEach(card => {
-        card.addEventListener('click', () => {
-          const gameId = card.dataset.gameId;
-          this.selectGame(gameId);
-        });
-      });
+      this.bindCardClicks(this.dom.gamesList);
+
     } catch (renderErr) {
       console.error('[renderUpcomingGames] render failed:', renderErr);
       this.dom.gamesList.innerHTML = `
