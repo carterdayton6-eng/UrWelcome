@@ -2419,49 +2419,138 @@ body {
   }
   .pinned-header { flex-wrap: wrap; gap: 8px; }
 
-  /* Game cards: vertical stack (drop 4-column layout) */
+  /* ── MOBILE GAME CARDS — compact ~25% shorter ───────────────── */
   .game-card {
     flex-direction: column !important;
-    gap: 10px;
-    padding: 14px;
+    gap: 0;
+    padding: 10px 12px 0;
+    border-radius: 10px;
   }
 
+  /* Date + time: one line, space-between */
   .game-col-datetime {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
     width: 100%;
+    padding-bottom: 6px;
     border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 8px;
+    margin-bottom: 0;
+    gap: 0;
   }
-  .game-date-str { font-size: 0.72rem; }
-  .game-time-str { font-size: 0.72rem; }
+  .game-date-str { font-size: 0.7rem; color: var(--text-dim); }
+  .game-time-str { font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); }
 
-  .game-col-teams { width: 100%; }
-  .game-matchup-rows { gap: 6px; }
-  .game-team-row { gap: 8px; }
-  .team-name-text { font-size: 0.9rem; }
-  .team-record-text { font-size: 0.7rem; }
+  /* Teams block */
+  .game-col-teams { width: 100%; padding: 6px 0 4px; }
+  .game-matchup-rows { gap: 3px; }
+  .game-team-row {
+    gap: 6px;
+    align-items: center;
+    min-height: 26px;
+  }
+  .game-at-separator {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    padding: 0 0 0 28px; /* align with team names */
+    line-height: 1;
+  }
+  .team-name-text {
+    font-size: 0.86rem;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .team-record-text {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 4px;
+  }
+  .game-venue-line {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 3px;
+  }
+  .game-venue-icon { font-size: 0.6rem; }
+  .game-venue-name { font-size: 0.62rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+  /* Odds: compact single row */
   .game-col-odds {
     width: 100%;
+    display: flex !important;
     flex-direction: row !important;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px 12px;
+    padding: 5px 0 6px;
     border-top: 1px solid var(--border-subtle);
-    padding-top: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-top: 4px;
   }
-  .game-odds-row { gap: 4px; }
-  .odds-label { font-size: 0.65rem; }
-  .odds-value { font-size: 0.72rem; }
+  .game-odds-row {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 3px;
+    min-width: 0;
+  }
+  .odds-label { font-size: 0.62rem; color: var(--text-dim); white-space: nowrap; }
+  .odds-value { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
 
+  /* Research bets: compact */
   .game-col-action { width: 100%; }
   .research-bets-btn {
     width: 100%;
     text-align: center;
-    padding: 10px;
-    font-size: 0.75rem;
+    padding: 8px 12px;
+    font-size: 0.7rem;
+    min-height: 40px;
+    border-radius: 0 0 10px 10px;
+    margin: 0 -12px;
+    width: calc(100% + 24px);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── MOBILE UFC FIGHT CARDS — compact ────────────────────────── */
+  .ufc-fight-card { padding: 10px 12px 0; border-radius: 10px; }
+  .ufc-fight-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .ufc-event-label { font-size: 0.65rem; }
+  .ufc-fight-datetime { font-size: 0.62rem; }
+  .ufc-fight-body {
+    padding: 6px 0 4px;
+    gap: 6px;
+  }
+  .ufc-fighter-name { font-size: 0.92rem; }
+  .ufc-fighter-record { font-size: 0.65rem; }
+  .ufc-vs-text { font-size: 0.9rem; }
+  .ufc-weight-class { font-size: 0.58rem; }
+  .ufc-fight-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 0 0;
+    border-top: 1px solid var(--border-subtle);
+    gap: 8px;
+  }
+  .ufc-venue-text { font-size: 0.62rem; }
+  .ufc-research-btn {
+    padding: 7px 14px;
+    font-size: 0.68rem;
+    min-height: 40px;
+    flex-shrink: 0;
+    border-radius: 0 0 10px 0;
+    margin: 0 -12px -0px 0;
   }
 
   /* UFC fight cards: compact */
@@ -2586,4 +2675,144 @@ body {
 
   .main-content { padding: 0 16px 20px; }
   .game-card { gap: 10px; }
+}
+
+/* ==========================================================================
+   GLOBAL SEARCH BAR (below sport tabs, above game list)
+   ========================================================================== */
+
+.global-search-bar {
+  position: relative;
+  margin: 0 0 12px;
+  z-index: 50;
+}
+
+.gsb-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  gap: 8px;
+  transition: border-color 0.15s;
+}
+.gsb-input-wrap:focus-within {
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 2px rgba(74,222,128,0.12);
+}
+
+.gsb-icon { font-size: 0.85rem; color: var(--text-dim); flex-shrink: 0; }
+
+.gsb-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  padding: 9px 0;
+  min-width: 0;
+}
+.gsb-input::placeholder { color: var(--text-dim); }
+
+.gsb-clear {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.75rem;
+  display: none;
+  flex-shrink: 0;
+  border-radius: 50%;
+  line-height: 1;
+}
+.gsb-clear:hover { color: var(--text-primary); background: var(--border-subtle); }
+
+/* Dropdown */
+.gsb-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 200;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
+}
+.gsb-dropdown.open { display: block; }
+
+.gsb-group-label {
+  padding: 8px 14px 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-subtle);
+}
+.gsb-group-label:first-child { border-top: none; }
+
+.gsb-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.gsb-result:hover,
+.gsb-result:focus { background: var(--bg-hover); outline: none; }
+
+.gsb-result-name {
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.gsb-result-sport {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.gsb-no-results {
+  padding: 16px 14px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* Desktop: search bar is narrower and less prominent */
+@media (min-width: 769px) {
+  .global-search-bar {
+    max-width: 420px;
+  }
+}
+
+/* Mobile: full width, slightly larger touch targets */
+@media (max-width: 768px) {
+  .gsb-input { font-size: 0.85rem; padding: 10px 0; }
+  .gsb-dropdown { max-height: 55vh; }
 }

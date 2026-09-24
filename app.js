@@ -43,7 +43,12 @@ class SportsResearchApp {
       liveDataLabel: document.getElementById('live-data-label'),
       liveDot: document.getElementById('live-dot'),
       lastUpdatedText: document.getElementById('last-updated-text'),
-      headerDatetime: document.getElementById('header-datetime')
+      headerDatetime: document.getElementById('header-datetime'),
+
+      // Global search
+      gsbInput: document.getElementById('global-search-input'),
+      gsbDropdown: document.getElementById('gsb-dropdown'),
+      gsbClear: document.getElementById('gsb-clear-btn'),
     };
 
     this.init();
@@ -56,6 +61,7 @@ class SportsResearchApp {
     this.bindEvents();
     this.bindSidebar();
     this.injectMobileTabBar();
+    this.initGlobalSearch();
     this.renderUpcomingGames();
   }
 
@@ -138,6 +144,216 @@ class SportsResearchApp {
     // Home
     const homeBtn = document.querySelector('[data-sidebar="home"]');
     if (homeBtn) homeBtn.addEventListener('click', () => this.goBackToGames());
+  }
+
+
+  initGlobalSearch() {
+    const input = this.dom.gsbInput;
+    const dropdown = this.dom.gsbDropdown;
+    const clearBtn = this.dom.gsbClear;
+    if (!input || !dropdown) return;
+
+    // Build search index from TEAM_DIRECTORY (always available)
+    // + any already-fetched live game data (picks up UFC fighters)
+    const buildIndex = () => {
+      const index = [];
+      const sportLabels = { nfl:'NFL', mlb:'MLB', nhl:'NHL', nba:'NBA', cfb:'CFB', ufc:'UFC' };
+
+      // Static teams from TEAM_DIRECTORY
+      if (typeof TEAM_DIRECTORY !== 'undefined') {
+        Object.values(TEAM_DIRECTORY).forEach(t => {
+          if (!t || !t.name || !t.sport) return;
+          index.push({
+            name: t.name,
+            sport: t.sport,
+            sportLabel: sportLabels[t.sport] || t.sport.toUpperCase(),
+            short: t.short || '',
+          });
+        });
+      }
+
+      // Add UFC fighters from currently cached live games
+      const cachedGames = this.service.activeGamesList || [];
+      cachedGames.forEach(g => {
+        if (g.sport !== 'ufc') return;
+        [g.awayTeam, g.homeTeam].forEach(fighter => {
+          if (!fighter || !fighter.name) return;
+          const bad = new Set(['Fighter A','Fighter B','Away Team','Home Team']);
+          if (bad.has(fighter.name)) return;
+          // Only add if not already in index
+          if (!index.find(e => e.name === fighter.name && e.sport === 'ufc')) {
+            index.push({ name: fighter.name, sport: 'ufc', sportLabel: 'UFC', short: fighter.short || '' });
+          }
+        });
+      });
+
+      return index;
+    };
+
+    let index = [];
+    let activeIdx = -1;
+
+    const openDropdown = () => dropdown.classList.add('open');
+    const closeDropdown = () => { dropdown.classList.remove('open'); activeIdx = -1; };
+
+    const renderDropdown = (query) => {
+      if (!query || !query.trim()) { closeDropdown(); return; }
+      if (!index.length) index = buildIndex();
+
+      const q = query.toLowerCase().trim();
+      const matches = index.filter(e =>
+        e.name.toLowerCase().includes(q) ||
+        (e.short && e.short.toLowerCase().includes(q))
+      );
+
+      if (!matches.length) {
+        dropdown.innerHTML = `<div class="gsb-no-results">No results for "${query}"</div>`;
+        openDropdown();
+        return;
+      }
+
+      // Group by sport
+      const groups = {};
+      const order = ['nfl','mlb','nhl','nba','cfb','ufc'];
+      matches.forEach(m => {
+        if (!groups[m.sport]) groups[m.sport] = [];
+        groups[m.sport].push(m);
+      });
+
+      let html = '';
+      order.forEach(sport => {
+        if (!groups[sport]) return;
+        html += `<div class="gsb-group-label">${groups[sport][0].sportLabel}</div>`;
+        groups[sport].slice(0, 8).forEach((m, i) => {
+          html += `<button class="gsb-result" data-sport="${m.sport}" data-name="${m.name}" role="option">
+            <span class="gsb-result-name">${m.name}</span>
+            <span class="gsb-result-sport">${m.sportLabel}</span>
+          </button>`;
+        });
+      });
+
+      dropdown.innerHTML = html;
+      activeIdx = -1;
+      openDropdown();
+
+      dropdown.querySelectorAll('.gsb-result').forEach(btn => {
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // prevent blur before click
+          this.handleSearchSelect(btn.dataset.sport, btn.dataset.name);
+          input.value = btn.dataset.name;
+          clearBtn.style.display = 'block';
+          closeDropdown();
+        });
+      });
+    };
+
+    // Input handler
+    input.addEventListener('input', () => {
+      const q = input.value;
+      clearBtn.style.display = q ? 'block' : 'none';
+      renderDropdown(q);
+      // Rebuild index lazily after first games load
+      if (!index.length) index = buildIndex();
+    });
+
+    input.addEventListener('focus', () => {
+      if (!index.length) index = buildIndex();
+      if (input.value.trim()) renderDropdown(input.value);
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => closeDropdown(), 150);
+    });
+
+    // Keyboard nav
+    input.addEventListener('keydown', (e) => {
+      const items = dropdown.querySelectorAll('.gsb-result');
+      if (!items.length) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIdx = Math.min(activeIdx + 1, items.length - 1);
+        items[activeIdx].focus();
+      } else if (e.key === 'Escape') {
+        closeDropdown(); input.blur();
+      } else if (e.key === 'Enter' && activeIdx >= 0) {
+        items[activeIdx].click();
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      clearBtn.style.display = 'none';
+      closeDropdown();
+      input.focus();
+    });
+
+    // Close if clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#global-search-bar')) closeDropdown();
+    });
+  }
+
+  handleSearchSelect(sport, teamName) {
+    // Switch to the right sport, then filter games list to show that team
+    if (!sport || !teamName) return;
+    this.showHomeView();
+    this.state.selectedSport = sport;
+    this.renderSportNav();
+    this.renderSeasonSlateBar();
+
+    // Update mobile tab bar active state
+    const mobileBar = document.getElementById('mobile-tab-bar');
+    if (mobileBar) {
+      mobileBar.querySelectorAll('[data-mobile-sport]').forEach(b => {
+        b.classList.toggle('active', b.dataset.mobileSport === sport);
+      });
+    }
+
+    // Fetch games for that sport, highlight the searched team
+    this.renderUpcomingGamesForTeam(sport, teamName);
+  }
+
+  async renderUpcomingGamesForTeam(sport, teamName) {
+    const options = {};
+    if (sport === 'nfl') options.week = this.state.nflWeek;
+    else if (sport === 'mlb') options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
+    else if (sport === 'nhl') options.date = this.getDateParamForOffset(this.state.nhlDateOffset);
+    else if (sport === 'nba') options.date = this.getDateParamForOffset(this.state.nbaDateOffset);
+    else if (sport === 'cfb' && this.state.cfbWeek > 0) options.week = this.state.cfbWeek;
+
+    this.dom.gamesList.innerHTML = `<div class="skeleton-grid">
+      <div class="skeleton-card"><div class="skeleton-bar title"></div><div class="skeleton-bar text"></div></div>
+    </div>`;
+
+    let games = [];
+    try {
+      games = await this.service.getUpcomingGames(sport, '', options);
+    } catch(e) { games = []; }
+
+    const q = teamName.toLowerCase();
+    const matched = games.filter(g =>
+      g.awayTeam.name.toLowerCase().includes(q) ||
+      g.homeTeam.name.toLowerCase().includes(q)
+    );
+
+    const allGames = matched.length ? matched : games;
+
+    if (!allGames.length) {
+      this.dom.gamesList.innerHTML = `<div class="empty-state">
+        <div class="empty-title">No upcoming games found</div>
+        <p>No current scheduled games for ${teamName}.</p>
+      </div>`;
+      return;
+    }
+
+    try {
+      this.dom.gamesList.innerHTML = allGames.map(g =>
+        g.sport === 'ufc' ? this.renderUFCFightCard(g) : this.renderGameCard(g)
+      ).join('');
+      this.dom.gamesList.querySelectorAll('.game-card, .ufc-fight-card').forEach(card => {
+        card.addEventListener('click', () => this.selectGame(card.dataset.gameId));
+      });
+    } catch(e) { console.error(e); }
   }
 
 

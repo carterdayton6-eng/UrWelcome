@@ -2682,10 +2682,22 @@ body {
         <!-- Week / Slate Navigator -->
         <nav class="season-slate-bar" id="season-slate-bar" aria-label="Select Week or Slate"></nav>
 
-        <!-- Live Feed Status -->
-        <div class="live-feed-banner">
-          <span>📡 ESPN Real-Time Schedules · Sportsbook Consensus Lines</span>
-          <span id="last-updated-text">Connecting to live feed...</span>
+        <!-- Global Search Bar -->
+        <div class="global-search-bar" id="global-search-bar">
+          <div class="gsb-input-wrap">
+            <span class="gsb-icon">🔍</span>
+            <input
+              type="text"
+              id="global-search-input"
+              class="gsb-input"
+              placeholder="Search for Team"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+            >
+            <button class="gsb-clear" id="gsb-clear-btn" aria-label="Clear search">✕</button>
+          </div>
+          <div class="gsb-dropdown" id="gsb-dropdown" role="listbox" aria-label="Search results"></div>
         </div>
 
         <!-- Section title -->
