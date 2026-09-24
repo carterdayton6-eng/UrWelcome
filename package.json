@@ -1,0 +1,14 @@
+{
+  "name": "urwelcome",
+  "version": "1.0.0",
+  "description": "UrWelcome — Sports Betting Research Terminal",
+  "private": true,
+  "scripts": {
+    "build": "python3 build.py",
+    "dev": "perl server.pl 8080",
+    "start": "perl server.pl 8080"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

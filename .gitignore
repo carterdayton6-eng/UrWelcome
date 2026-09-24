@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.npm/
+.yarn/
+
+# Build output (Vercel reads from dist/)
+dist/
+
+# Local dev server log
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
