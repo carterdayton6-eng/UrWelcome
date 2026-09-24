@@ -3238,3 +3238,277 @@ body {
   .di-game-log-entry { grid-template-columns: 46px 1fr auto auto; gap: 5px; }
   .di-player-row { padding: 8px 10px; }
 }
+
+/* ==========================================================================
+   PLAYER RESEARCH CARDS — Verified ESPN Boxscore Data
+   ========================================================================== */
+
+.pr-section {
+  margin-bottom: 14px;
+}
+
+.pr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pr-section-title {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.pr-section-source {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-green);
+}
+
+.pr-section-sub {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+/* Team section */
+.pr-team-section {
+  margin-bottom: 16px;
+}
+
+.pr-team-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Cards grid — 2 columns on wider screens, 1 on mobile */
+.pr-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .pr-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Individual player card */
+.pr-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(245, 185, 32, 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Card top row: name + verified badge */
+.pr-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pr-card-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pr-player-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pr-group-badge {
+  display: inline-block;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 2px 5px;
+  align-self: flex-start;
+}
+
+.pr-verified-dot {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--accent-green);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Prop line row */
+.pr-prop-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+
+.pr-prop-label {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pr-prop-val {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.pr-prop-why {
+  font-size: 0.58rem;
+  opacity: 0.65;
+}
+
+/* Game log block */
+.pr-log-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pr-log-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.pr-log-count {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  font-size: 0.58rem;
+}
+
+/* Individual game row */
+.pr-log-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.pr-log-row:last-child {
+  border-bottom: none;
+}
+
+.pr-log-row.pr-log-last {
+  border-bottom-color: rgba(245,185,32,0.2);
+}
+
+.pr-log-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.pr-log-date {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  min-width: 40px;
+}
+
+.pr-log-opp {
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  min-width: 36px;
+}
+
+/* Stat chips */
+.pr-log-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.pr-chip b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.pr-chip-none {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* "LAST" tag on most recent game row */
+.pr-last-tag {
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  background: rgba(245,185,32,0.1);
+  border: 1px solid rgba(245,185,32,0.3);
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+/* Mobile compact overrides */
+@media (max-width: 768px) {
+  .pr-card { padding: 10px 11px; gap: 6px; }
+  .pr-player-name { font-size: 0.82rem; }
+  .pr-chip { font-size: 0.58rem; padding: 1px 4px; }
+  .pr-log-date, .pr-log-opp { font-size: 0.62rem; }
+  .pr-section-sub { font-size: 0.6rem; }
+}

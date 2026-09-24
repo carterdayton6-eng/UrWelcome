@@ -1659,7 +1659,16 @@ export class PlayerGameLogService {
         homeAway: myComp?.homeAway || 'unknown',
         opponentName: oppComp?.team?.displayName || oppComp?.team?.abbreviation || 'Unknown',
         opponentAbbr: oppComp?.team?.abbreviation || '',
-        score: `${myComp?.score || '?'}-${oppComp?.score || '?'}`,
+        score: (() => {
+        const _s = (c) => {
+          if (!c) return '?';
+          const v = c.score;
+          if (v === null || v === undefined) return '?';
+          if (typeof v === 'object') return v.displayValue || String(Math.round(v.value || 0));
+          return String(v);
+        };
+        return `${_s(myComp)}-${_s(oppComp)}`;
+      })(),
       });
     }
 
@@ -1887,8 +1896,8 @@ export class PlayerGameLogService {
     const homeTeamId = game.homeTeam?.id;
 
     const [awayData, homeData] = await Promise.all([
-      awayTeamId ? this.getTeamPlayerLogs(sport, awayTeamId, 3) : Promise.resolve({ players: [] }),
-      homeTeamId ? this.getTeamPlayerLogs(sport, homeTeamId, 3) : Promise.resolve({ players: [] }),
+      awayTeamId ? this.getTeamPlayerLogs(sport, awayTeamId, 10) : Promise.resolve({ players: [] }),
+      homeTeamId ? this.getTeamPlayerLogs(sport, homeTeamId, 10) : Promise.resolve({ players: [] }),
     ]);
 
     return {
@@ -1940,7 +1949,9 @@ export class PlayerGameLogService {
           gameDateStr: game.gameDateStr,
           gameDate: game.gameDate,
           opponentName: game.opponentName,
+          opponentAbbr: game.opponentAbbr || '',
           homeAway: game.homeAway,
+          score: game.score || '',
           stats: r.stats,
           primaryStat: r.primaryStat,
           _verified: true,

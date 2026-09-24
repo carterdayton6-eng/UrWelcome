@@ -356,123 +356,185 @@ class SportsResearchApp {
 
 
 
-  // ─── Render verified player stats from ESPN game logs ───────────────────────
-  // Called with researchData from PlayerGameLogService.getGameResearchData()
-  // Falls back to data-unavailable notice if researchData is null/empty.
+  // ─── Render verified player stats from ESPN game logs ────────────────────────
+  // Uses researchData from PlayerGameLogService.getGameResearchData()
+  // Shows actual per-game boxscore stats (verified ESPN data) for each player.
+  // Prop lines are not available from ESPN — marked as "Unavailable".
+  // Hit rates are NOT calculated here — requires historical sportsbook lines.
   _renderResearchStats(researchData, game) {
-    // UFC: show honest note (no per-fighter game logs via ESPN public API)
+    // UFC: no per-fighter game logs available via ESPN public API
     if (game && game.sport === 'ufc') {
       return `<div class="di-notice-card">
         <div class="di-notice-header">
           <span class="di-notice-icon">ℹ️</span>
-          <span class="di-notice-title">UFC Fighter Stats</span>
+          <span class="di-notice-title">UFC — Fighter Stats</span>
         </div>
         <div class="di-notice-body">
-          <p>Individual UFC fighter historical game logs are not available through ESPN's public API. Fight result data appears in scoreboard feeds after events complete.</p>
+          <p>UFC fighter individual game logs are not available through ESPN's public scoreboard API. Fight results appear after events complete.</p>
         </div>
       </div>`;
     }
 
-    // No data returned — show transparent notice
-    if (!researchData || (!researchData.awayTeam?.players?.length && !researchData.homeTeam?.players?.length)) {
+    // Loading / no data
+    if (!researchData ||
+        (!researchData.awayTeam?.players?.length && !researchData.homeTeam?.players?.length)) {
       return `<div class="di-notice-card">
         <div class="di-notice-header">
-          <span class="di-notice-icon">ℹ️</span>
-          <span class="di-notice-title">Player Stats — Loading or Unavailable</span>
+          <span class="di-notice-icon">⏳</span>
+          <span class="di-notice-title">Player Stats Loading…</span>
         </div>
         <div class="di-notice-body">
-          <p>Player game log data could not be loaded. This happens when both teams have no completed games yet this season, or the ESPN API request timed out.</p>
-          <p class="di-data-note"><strong>What IS verified above:</strong> game schedule, team records, and current betting lines from ESPN's live feed.</p>
-        </div>
-        <div class="di-principle">
-          <span class="di-principle-icon">🎯</span>
-          <span>We only show verified statistics. Unavailable > fabricated.</span>
+          <p>Fetching game logs from ESPN. This appears when both teams have no completed games yet, or requests are still in flight.</p>
         </div>
       </div>`;
     }
 
-    const renderTeamSection = (teamData, label) => {
-      if (!teamData?.players?.length) return '';
-      
-      // Prioritize skill-position groups
-      const priority = ['passing','rushing','receiving','batting','pitching','skating','scoring','defensive','goaltending'];
-      const sorted = [...teamData.players].sort((a, b) => {
-        const ai = priority.indexOf(a.statGroup);
-        const bi = priority.indexOf(b.statGroup);
-        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-      });
+    // ─── Stat display keys per group ────────────────────────────────────────
+    // [espnKey, shortLabel] — only keys that actually appear in ESPN boxscores
+    const DISPLAY_KEYS = {
+      passing:   [['passingYards','Yds'],['completions/passingAttempts','Cmp/Att'],['passingTouchdowns','TD'],['interceptions','INT']],
+      rushing:   [['rushingYards','Yds'],['rushingAttempts','Att'],['rushingTouchdowns','TD']],
+      receiving: [['receivingYards','Yds'],['receptions','Rec'],['receivingTargets','Tgt'],['receivingTouchdowns','TD']],
+      defensive: [['totalTackles','Tkl'],['sacks','Sk'],['interceptions','INT'],['passesDefended','PD']],
+      batting:   [['hits','H'],['atBats','AB'],['runs','R'],['RBIs','RBI'],['homeRuns','HR'],['strikeouts','K']],
+      pitching:  [['fullInnings.partInnings','IP'],['strikeouts','K'],['earnedRuns','ER'],['walks','BB']],
+      forwards:  [['goals','G'],['assists','A'],['shotsTotal','SOG'],['plusMinus','+/-']],
+      defenses:  [['goals','G'],['assists','A'],['blockedShots','BLK'],['plusMinus','+/-']],
+      goaltending:[['saves','SV'],['shotsAgainst','SA'],['goalsAgainst','GA'],['savePercentage','SV%']],
+      scoring:   [['points','Pts'],['rebounds','Reb'],['assists','Ast'],['steals','Stl'],['blocks','Blk']],
+    };
 
-      // Deduplicate: one row per player (show their primary/best stat group only)
-      const seen = new Set();
-      const unique = sorted.filter(p => {
-        if (seen.has(p.playerId)) return false;
-        seen.add(p.playerId);
-        return true;
-      });
+    // Priority: which stat group to prefer per player when they appear in multiple
+    const GROUP_RANK = {passing:1,batting:1,scoring:1,forwards:1,
+                        rushing:2,pitching:2,defenses:2,
+                        receiving:3,goaltending:3,defensive:4};
+    const SHOW_GROUPS = new Set(Object.keys(GROUP_RANK));
 
-      // Only show top 6 players
-      const top = unique.slice(0, 6);
-      if (!top.length) return '';
+    const PROP_LABEL = {
+      passing:'Passing Yards O/U', rushing:'Rushing Yards O/U',
+      receiving:'Receiving Yards O/U', batting:'Hits O/U',
+      pitching:'Strikeouts O/U', forwards:'Points (G+A) O/U',
+      scoring:'Points O/U', defenses:'Shots O/U',
+    };
 
-      const rows = top.map(p => {
-        const gamesHtml = p.games.slice(0, 3).map(g => {
-          const ps = g.primaryStat;
-          const statDisplay = ps ? `${this._friendlyStatKey(ps.key)}: ${ps.value}` : 'No data';
-          return `<div class="di-game-log-entry">
-            <span class="di-game-log-date">${g.gameDateStr}</span>
-            <span class="di-game-log-opp">vs ${g.opponentAbbr || g.opponentName}</span>
-            <span class="di-game-log-stat">${statDisplay}</span>
-            <span class="di-game-log-verified" title="Verified from ESPN boxscore">✓</span>
-          </div>`;
-        }).join('');
+    const GROUP_LABEL = {
+      passing:'Passing', rushing:'Rushing', receiving:'Receiving',
+      defensive:'Defense', batting:'Batting', pitching:'Pitching',
+      forwards:'Skater', defenses:'Defense', goaltending:'Goalie', scoring:'Scoring',
+    };
 
-        const groupLabel = {'passing':'Passing','rushing':'Rushing','receiving':'Receiving',
-          'defensive':'Defense','batting':'Batting','pitching':'Pitching',
-          'skating':'Skating','scoring':'Scoring','goaltending':'Goaltending'}[p.statGroup] || p.statGroup;
+    // ─── Render one player research card ───────────────────────────────────
+    const renderPlayerCard = (player) => {
+      const dispKeys = DISPLAY_KEYS[player.statGroup] || [];
+      const games = player.games.slice(0, 10); // up to 10 most-recent verified games
+      if (!games.length) return '';
 
-        return `<div class="di-player-row">
-          <div class="di-player-header">
-            <span class="di-player-name">${p.playerName}</span>
-            <span class="di-player-group">${groupLabel}</span>
-          </div>
-          <div class="di-game-log-list">
-            ${gamesHtml || '<div class="di-game-log-empty">No completed games yet</div>'}
-          </div>
+      const groupLabel = GROUP_LABEL[player.statGroup] || player.statGroup;
+      const propLabel  = PROP_LABEL[player.statGroup] || 'Prop';
+
+      // Game log rows (most recent first — already sorted by PlayerGameLogService)
+      const logRows = games.map((g, idx) => {
+        // Build stat chips: only keys that have actual data
+        const chips = dispKeys.map(([k, label]) => {
+          const val = g.stats?.[k];
+          if (val === undefined || val === null || val === '' || val === '--') return '';
+          return `<span class="pr-chip">${label}<b>${val}</b></span>`;
+        }).filter(Boolean).join('');
+
+        const oppLabel = g.opponentAbbr || (g.opponentName || 'OPP').substring(0, 3).toUpperCase();
+        const atVs = g.homeAway === 'away' ? '@' : 'vs';
+
+        return `<div class="pr-log-row${idx === 0 ? ' pr-log-last' : ''}">
+          <span class="pr-log-meta">
+            <span class="pr-log-date">${g.gameDateStr || ''}</span>
+            <span class="pr-log-opp">${atVs} ${oppLabel}</span>
+          </span>
+          <span class="pr-log-chips">${chips || '<span class="pr-chip-none">—</span>'}</span>
+          ${idx === 0 ? '<span class="pr-last-tag">LAST</span>' : ''}
         </div>`;
       }).join('');
 
-      return `<div class="di-team-stats-section">
-        <div class="di-team-stats-header">
-          <span class="di-team-stats-name">${label}</span>
-          <span class="di-verified-inline">✓ ESPN Boxscore</span>
+      const gamesLabel = games.length < 3
+        ? `${games.length} game${games.length !== 1 ? 's' : ''} this season`
+        : `Last ${games.length}`;
+
+      return `<div class="pr-card">
+        <div class="pr-card-top">
+          <div class="pr-card-identity">
+            <span class="pr-player-name">${player.playerName}</span>
+            <span class="pr-group-badge">${groupLabel}</span>
+          </div>
+          <span class="pr-verified-dot" title="ESPN Boxscore">✓</span>
         </div>
-        <div class="di-player-list">${rows}</div>
+
+        <div class="pr-prop-line">
+          <span class="pr-prop-label">${propLabel}</span>
+          <span class="pr-prop-val">Unavailable<span class="pr-prop-why"> — no sportsbook API</span></span>
+        </div>
+
+        <div class="pr-log-block">
+          <div class="pr-log-title">
+            <span>GAME LOG</span>
+            <span class="pr-log-count">${gamesLabel} · most recent first</span>
+          </div>
+          ${logRows}
+        </div>
       </div>`;
     };
 
-    const awaySec = renderTeamSection(researchData.awayTeam, researchData.awayTeam.name || 'Away Team');
-    const homeSec = renderTeamSection(researchData.homeTeam, researchData.homeTeam.name || 'Home Team');
+    // ─── Render a team's player cards ─────────────────────────────────────
+    const renderTeamSection = (teamData) => {
+      if (!teamData?.players?.length) return '';
+
+      // Deduplicate: keep best stat group per player
+      const byPlayer = new Map();
+      for (const p of teamData.players) {
+        if (!SHOW_GROUPS.has(p.statGroup) || !p.games?.length) continue;
+        const rank = GROUP_RANK[p.statGroup] ?? 9;
+        const existing = byPlayer.get(p.playerId);
+        if (!existing || rank < (GROUP_RANK[existing.statGroup] ?? 9)) {
+          byPlayer.set(p.playerId, p);
+        }
+      }
+
+      // Sort by group rank then by # games desc
+      const players = [...byPlayer.values()]
+        .sort((a, b) => (GROUP_RANK[a.statGroup]??9) - (GROUP_RANK[b.statGroup]??9) || b.games.length - a.games.length)
+        .slice(0, 6); // max 6 players per team
+
+      if (!players.length) return '';
+      const cards = players.map(renderPlayerCard).filter(Boolean).join('');
+      if (!cards) return '';
+
+      return `<div class="pr-team-section">
+        <div class="pr-team-label">${teamData.name || ''}</div>
+        <div class="pr-cards-grid">${cards}</div>
+      </div>`;
+    };
+
+    const awaySec = renderTeamSection(researchData.awayTeam);
+    const homeSec = renderTeamSection(researchData.homeTeam);
 
     if (!awaySec && !homeSec) {
       return `<div class="di-notice-card">
-        <div class="di-notice-header"><span class="di-notice-icon">ℹ️</span><span class="di-notice-title">No Completed Games This Season</span></div>
-        <div class="di-notice-body"><p>No completed games were found for either team. Check back once the season is underway.</p></div>
+        <div class="di-notice-header"><span class="di-notice-icon">ℹ️</span><span class="di-notice-title">No Completed Games Yet</span></div>
+        <div class="di-notice-body"><p>Neither team has completed games this season. Player stats will appear here after Week 1.</p></div>
       </div>`;
     }
 
-    return `
-      <div class="di-stats-container">
-        <div class="di-stats-header-row">
-          <span class="di-stats-title">RECENT PLAYER STATS</span>
-          <span class="di-stats-source">ESPN Boxscore Data · Verified</span>
-        </div>
-        <div class="di-stats-note">Game logs from last 3 completed games · Sorted most recent first · No fabricated stats</div>
-        ${awaySec}${homeSec}
+    return `<section class="pr-section">
+      <div class="pr-section-header">
+        <span class="pr-section-title">PLAYER RESEARCH</span>
+        <span class="pr-section-source">ESPN Boxscore · Verified · No fabricated data</span>
       </div>
-      <div class="di-prop-lines-notice">
-        <span>📋</span>
-        <span>Player prop lines (Over/Under thresholds) require a licensed sportsbook API. Stats above are raw game results only — no sportsbook lines are applied.</span>
-      </div>`;
+      <p class="pr-section-sub">Actual game-by-game stats from completed ESPN boxscores · Prop lines require a sportsbook API · No hit rates until historical lines are available</p>
+      ${awaySec}
+      ${homeSec}
+    </section>
+    <div class="di-prop-lines-notice">
+      <span>📋</span>
+      <span>Prop O/U lines and odds are not displayed here because they require a licensed sportsbook API. Stats shown are raw ESPN boxscore results only.</span>
+    </div>`;
   }
 
   _friendlyStatKey(key) {
