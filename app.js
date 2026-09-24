@@ -29,7 +29,6 @@ class SportsResearchApp {
     };
 
     this.dom = {
-      pinnedBostonSection: document.getElementById('pinned-boston-section'),
       sportNav: document.getElementById('sport-nav'),
       seasonSlateBar: document.getElementById('season-slate-bar'),
       teamSearchInput: document.getElementById('team-search-input'),
@@ -52,7 +51,6 @@ class SportsResearchApp {
 
   init() {
     this.startClock();
-    this.renderPinnedBostonSection();
     this.renderSportNav();
     this.renderSeasonSlateBar();
     this.bindEvents();
@@ -201,73 +199,6 @@ class SportsResearchApp {
     });
   }
 
-  renderPinnedBostonSection() {
-    if (!this.dom.pinnedBostonSection) return;
-
-    const pinnedGames = this.service.getPinnedBostonTeams();
-    if (!pinnedGames || pinnedGames.length === 0) {
-      this.dom.pinnedBostonSection.style.display = 'none';
-      return;
-    }
-
-    this.dom.pinnedBostonSection.style.display = 'block';
-    this.dom.pinnedBostonSection.innerHTML = `
-      <div class="pinned-boston-header">
-        <div class="pinned-title-group">
-          <span class="pinned-title">
-            <span class="pinned-title-star">★</span>
-            <span>MY TEAMS</span>
-          </span>
-          <span class="pinned-badge-chip">Patriots · Bruins · Red Sox</span>
-        </div>
-        <span class="pinned-subtext">Upcoming games with live floor research & anchor parlays</span>
-      </div>
-
-      <div class="pinned-cards-grid">
-        ${pinnedGames.map(game => {
-          const isAwayBoston = (game.awayTeam.short === 'NE' || game.awayTeam.short === 'BOS');
-          const isHomeBoston = (game.homeTeam.short === 'NE' || game.homeTeam.short === 'BOS');
-          let teamClass = 'patriots-card';
-          if (game.teamNickname === 'Bruins' || game.sport === 'nhl') teamClass = 'bruins-card';
-          else if (game.teamNickname === 'Red Sox' || game.sport === 'mlb') teamClass = 'redsox-card';
-
-          return `
-            <div class="pinned-card ${teamClass}" data-pinned-game-id="${game.id}">
-              <div class="pinned-card-top">
-                <span class="pinned-sport-tag">${game.icon || '🏆'} ${game.sport.toUpperCase()} • ${game.teamNickname}</span>
-                <span class="pinned-time-tag">${game.date} • ${game.startTime}</span>
-              </div>
-
-              <div class="pinned-teams-display">
-                <div class="pinned-team-row ${isAwayBoston ? 'boston-highlight' : ''}">
-                  <span>${isAwayBoston ? '★ ' : ''}${game.awayTeam.name}</span>
-                  <span class="team-record">${game.awayTeam.record || ''}</span>
-                </div>
-                <div class="pinned-team-row ${isHomeBoston ? 'boston-highlight' : ''}">
-                  <span>${isHomeBoston ? '★ ' : ''}${game.homeTeam.name}</span>
-                  <span class="team-record">${game.homeTeam.record || ''}</span>
-                </div>
-              </div>
-
-              <div class="pinned-card-footer">
-                <div class="pinned-odds-summary">
-                  Spread: <strong>${game.summaryLines.spread}</strong> | Total: <strong>${game.summaryLines.total}</strong>${game.summaryLines.ml ? ` | ML: <strong>${game.summaryLines.ml}</strong>` : ''}
-                </div>
-                <span class="pinned-view-link">Research Bets →</span>
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-
-    this.dom.pinnedBostonSection.querySelectorAll('.pinned-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const gameId = card.dataset.pinnedGameId;
-        this.selectGame(gameId);
-      });
-    });
-  }
 
   renderSportNav() {
     this.dom.sportNav.innerHTML = SPORTS.map(sport => `
@@ -440,7 +371,8 @@ class SportsResearchApp {
     this.state.selectedGameId = null;
     this.dom.homeView.style.display = 'block';
     this.dom.gameView.style.display = 'none';
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    // NOTE: no scrollTo here — sport tab switches call showHomeView and must
+    // NOT force the viewport to jump. Only goBackToGames scrolls to top.
   }
 
   showGameView() {
@@ -451,8 +383,10 @@ class SportsResearchApp {
 
   goBackToGames() {
     this.showHomeView();
+    window.scrollTo({ top: 0, behavior: 'instant' }); // explicit back navigation — scroll to top
     this.renderUpcomingGames();
   }
+
 
   async doRefresh() {
     const btn = this.dom.refreshBtn;
@@ -469,8 +403,7 @@ class SportsResearchApp {
       // Re-fetch current sport data
       await this.renderUpcomingGames();
       // Also refresh Boston pinned section with fresh data
-      this.renderPinnedBostonSection();
-
+  
       btn.textContent = '🔄 Refresh';
     } catch (err) {
       console.error('[Refresh] Failed:', err);
@@ -524,9 +457,7 @@ class SportsResearchApp {
       return;
     }
 
-    // Update Boston section and timestamp
-    try { this.renderPinnedBostonSection(); } catch(e) { /* non-critical */ }
-
+    // Update timestamp
     if (this.dom.lastUpdatedText) {
       const now = new Date();
       this.dom.lastUpdatedText.textContent = `Live Feed Connected · ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
