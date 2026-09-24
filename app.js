@@ -17,7 +17,6 @@ class SportsResearchApp {
     this.state = {
       selectedSport: 'nfl',
       selectedGameId: null,
-      searchQuery: '',
       nflWeek: 3,
       mlbDateOffset: 0,
       nhlDateOffset: 0,
@@ -31,8 +30,7 @@ class SportsResearchApp {
     this.dom = {
       sportNav: document.getElementById('sport-nav'),
       seasonSlateBar: document.getElementById('season-slate-bar'),
-      teamSearchInput: document.getElementById('team-search-input'),
-      searchClearBtn: document.getElementById('search-clear-btn'),
+
       homeView: document.getElementById('home-view'),
       gameView: document.getElementById('game-view'),
       gamesList: document.getElementById('games-list'),
@@ -41,7 +39,9 @@ class SportsResearchApp {
       demoBadge: document.getElementById('demo-badge'),
       modalCloseBtn: document.getElementById('modal-close-btn'),
       brandTitle: document.getElementById('brand-title'),
-      refreshBtn: document.getElementById('refresh-btn'),
+      liveDataBtn: document.getElementById('live-data-btn'),
+      liveDataLabel: document.getElementById('live-data-label'),
+      liveDot: document.getElementById('live-dot'),
       lastUpdatedText: document.getElementById('last-updated-text'),
       headerDatetime: document.getElementById('header-datetime')
     };
@@ -142,27 +142,14 @@ class SportsResearchApp {
 
 
   bindEvents() {
-    // Search input
-    this.dom.teamSearchInput.addEventListener('input', (e) => {
-      this.state.searchQuery = e.target.value;
-      this.dom.searchClearBtn.style.display = this.state.searchQuery ? 'block' : 'none';
-      this.renderUpcomingGames();
-    });
-
-    this.dom.searchClearBtn.addEventListener('click', () => {
-      this.dom.teamSearchInput.value = '';
-      this.state.searchQuery = '';
-      this.dom.searchClearBtn.style.display = 'none';
-      this.renderUpcomingGames();
-      this.dom.teamSearchInput.focus();
-    });
-
-    // Refresh button — clears cache, re-fetches live data, updates UI
-    if (this.dom.refreshBtn) {
-      this.dom.refreshBtn.addEventListener('click', () => this.doRefresh());
+    // LIVE DATA badge — tap to refresh live ESPN data
+    if (this.dom.liveDataBtn) {
+      this.dom.liveDataBtn.addEventListener('click', () => this.doRefresh());
+      this.dom.liveDataBtn.style.cursor = 'pointer';
+      this.dom.liveDataBtn.title = 'Tap to refresh live data';
     }
 
-    // Auto-refresh every 15 minutes (silently, no UI disruption)
+    // Silent auto-refresh every 15 minutes
     setInterval(() => {
       this.service.clearCache();
     }, 15 * 60 * 1000);
@@ -172,11 +159,7 @@ class SportsResearchApp {
       this.goBackToGames();
     });
 
-    // Architecture modal
-    this.dom.demoBadge.addEventListener('click', () => {
-      this.dom.demoModal.classList.add('open');
-    });
-
+    // Architecture modal (keep for demo-modal close)
     this.dom.modalCloseBtn.addEventListener('click', () => {
       this.dom.demoModal.classList.remove('open');
     });
@@ -389,35 +372,42 @@ class SportsResearchApp {
 
 
   async doRefresh() {
-    const btn = this.dom.refreshBtn;
-    if (!btn || btn.dataset.refreshing === 'true') return;
+    const btn = this.dom.liveDataBtn;
+    const label = this.dom.liveDataLabel;
+    const dot = this.dom.liveDot;
 
-    btn.dataset.refreshing = 'true';
-    btn.textContent = '⏳ Refreshing...';
-    btn.disabled = true;
+    // Prevent double-tap
+    if (btn && btn.dataset.refreshing === 'true') return;
+    if (btn) btn.dataset.refreshing = 'true';
+
+    // Animate badge: pulsing dot + label change
+    if (label) label.textContent = 'REFRESHING...';
+    if (dot) dot.style.animation = 'pulse 0.4s ease-in-out infinite';
+    if (btn) btn.disabled = true;
 
     try {
-      // Clear all cached data so next fetch is truly fresh
       this.service.clearCache();
-
-      // Re-fetch current sport data
       await this.renderUpcomingGames();
-      // Also refresh Boston pinned section with fresh data
-  
-      btn.textContent = '🔄 Refresh';
+
+      // Brief "UPDATED" confirmation
+      if (label) label.textContent = 'UPDATED ✓';
+      setTimeout(() => {
+        if (label) label.textContent = 'LIVE DATA';
+        if (dot) dot.style.animation = '';
+      }, 1500);
     } catch (err) {
       console.error('[Refresh] Failed:', err);
-      btn.textContent = '⚠️ Refresh failed — try again';
-      btn.style.color = '#f87171';
+      if (label) label.textContent = 'RETRY';
+      if (dot) dot.style.background = '#f87171';
       setTimeout(() => {
-        btn.textContent = '🔄 Refresh';
-        btn.style.color = '';
-      }, 4000);
+        if (label) label.textContent = 'LIVE DATA';
+        if (dot) { dot.style.background = ''; dot.style.animation = ''; }
+      }, 3000);
     } finally {
-      btn.disabled = false;
-      btn.dataset.refreshing = 'false';
+      if (btn) { btn.disabled = false; btn.dataset.refreshing = 'false'; }
     }
   }
+
 
   async renderUpcomingGames() {
 
@@ -445,7 +435,7 @@ class SportsResearchApp {
 
     let games = [];
     try {
-      games = await this.service.getUpcomingGames(this.state.selectedSport, this.state.searchQuery, options);
+      games = await this.service.getUpcomingGames(this.state.selectedSport, '', options);
     } catch (err) {
       console.error('[renderUpcomingGames] fetch failed:', err);
       this.dom.gamesList.innerHTML = `

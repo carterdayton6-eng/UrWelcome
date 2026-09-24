@@ -2611,27 +2611,12 @@ body {
         </div>
       </div>
 
-      <!-- Global search -->
-      <div class="header-search-wrapper">
-        <span class="header-search-icon">🔍</span>
-        <input
-          type="text"
-          id="team-search-input"
-          class="header-search-input"
-          placeholder="Search teams, players, leagues... (e.g. Patriots, Josh Allen, Yankees)"
-          autocomplete="off"
-        >
-        <button id="search-clear-btn" class="header-search-clear" aria-label="Clear search">✕</button>
-      </div>
 
       <!-- Header right controls -->
       <div class="header-right">
-        <button class="live-status-badge" id="demo-badge" title="Live Terminal Feeds Active">
-          <span class="live-dot"></span>
-          <span>LIVE DATA</span>
-        </button>
-        <button class="refresh-btn" id="refresh-btn" title="Refresh Live Data">
-          🔄 Refresh
+        <button class="live-status-badge" id="live-data-btn" title="Tap to refresh live data">
+          <span class="live-dot" id="live-dot"></span>
+          <span id="live-data-label">LIVE DATA</span>
         </button>
         <span class="header-datetime" id="header-datetime"></span>
       </div>
