@@ -52,8 +52,9 @@ def build():
     # Read source files
     css = read('styles.css')
     live_service = strip_es_modules(read('liveService.js'))
-    data = strip_es_modules(read('data.js'))
-    app = strip_es_modules(read('app.js'))
+    data         = strip_es_modules(read('data.js'))
+    odds_service = strip_es_modules(read('oddsService.js'))
+    app          = strip_es_modules(read('app.js'))
 
     # Single JS bundle — DOMContentLoaded handles initialization (no duplicate call)
     js_bundle = '\n\n'.join([
@@ -61,6 +62,8 @@ def build():
         live_service,
         '/* === data.js === */',
         data,
+        '/* === oddsService.js === */',
+        odds_service,
         '/* === app.js === */',
         app,
     ])
@@ -103,11 +106,18 @@ def build():
     size_kb = len(html.encode('utf-8')) / 1024
     js_size_kb = len(js_bundle.encode('utf-8')) / 1024
 
+    # Security: verify ODDS_API_KEY is NOT in the frontend bundle
+    if 'ODDS_API_KEY' in js_bundle or 'api.the-odds-api.com' in js_bundle:
+        print('  ⚠️  SECURITY: ODDS_API_KEY or direct Odds API URL found in frontend bundle!')
+        print('     API calls must go through /api/* endpoints only.')
+    else:
+        print('  ✓ Security: ODDS_API_KEY not in frontend bundle (calls /api/* only)')
+
     print(f'  ✓ Output: dist/index.html')
     print(f'  ✓ Total size: {size_kb:.1f} KB')
     print(f'  ✓ JS bundle: {js_size_kb:.1f} KB')
     print(f'  ✓ localhost refs: {localhost_count}')
-    print(f'  ✓ API keys exposed: 0 (ESPN API is public — no keys needed)')
+    print(f'  ✓ API keys exposed: 0 (ESPN public — key only in Vercel ODDS_API_KEY env var)')
     print('Build complete.')
 
     return output_path

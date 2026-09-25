@@ -3512,3 +3512,141 @@ body {
   .pr-log-date, .pr-log-opp { font-size: 0.62rem; }
   .pr-section-sub { font-size: 0.6rem; }
 }
+
+/* ==========================================================================
+   ODDS API INTEGRATION — Current Props + Historical OVER/UNDER Display
+   ========================================================================== */
+
+/* Current live prop line section */
+.pr-prop-live {
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  border-left: 2px solid rgba(245,185,32,0.5);
+}
+
+.pr-prop-live-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pr-odds-src {
+  font-size: 0.55rem;
+  color: var(--accent-green);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+
+.pr-bm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pr-bm-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.66rem;
+  flex-wrap: wrap;
+}
+
+.pr-bm-name {
+  color: var(--text-dim);
+  min-width: 72px;
+  font-weight: 600;
+}
+
+.pr-bm-num {
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+
+.pr-bm-odds {
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+}
+
+/* Historical line slot within each game-log row */
+.pr-hist-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.pr-hist-dot {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
+.pr-hist-line {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.pr-hist-unavail {
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* OVER / UNDER / PUSH result badges */
+.pr-result-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pr-result-over {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.pr-result-under {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.pr-result-push {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Hit rate summary row */
+.pr-hit-rate {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  padding: 4px 0;
+  border-top: 1px solid var(--border-subtle);
+  font-style: italic;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .pr-prop-live { padding: 5px 7px; }
+  .pr-bm-name { min-width: 60px; font-size: 0.6rem; }
+  .pr-bm-num  { font-size: 0.7rem; }
+  .pr-hist-line { font-size: 0.56rem; }
+  .pr-result-badge { font-size: 0.5rem; padding: 1px 4px; }
+}
