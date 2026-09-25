@@ -247,13 +247,25 @@ export class OddsApiService {
   }
 
   // ── Parse Odds API bookmaker response → normalized player props ────────────
-  // Returns: { playerNameNorm: { marketKey: { line, overOdds, underOdds, bookmakers: [] } } }
+  // Returns: { playerNameNorm: { marketKey: { line, overOdds, underOdds, bookmaker, bookmakers: [] } } }
   _parseProps(eventData) {
     if (!eventData?.bookmakers) return {};
     const result = {};
 
-    for (const bm of eventData.bookmakers) {
-      const bmName = bm.title || bm.key || 'Unknown';
+    const preferredBooks = ['DraftKings', 'FanDuel', 'Caesars', 'BetMGM', 'BetRivers', 'Bovada', 'BetOnline.ag'];
+    const sortedBms = [...eventData.bookmakers].sort((a, b) => {
+      const titleA = a.title || a.key || '';
+      const titleB = b.title || b.key || '';
+      const idxA = preferredBooks.indexOf(titleA);
+      const idxB = preferredBooks.indexOf(titleB);
+      const orderA = idxA === -1 ? 999 : idxA;
+      const orderB = idxB === -1 ? 999 : idxB;
+      return orderA - orderB;
+    });
+
+    for (const bm of sortedBms) {
+      const bmName = bm.title || bm.key || 'Sportsbook';
+      const isDK = bmName.toLowerCase().includes('draftkings');
       for (const market of (bm.markets || [])) {
         const mKey = market.key;
         for (const outcome of (market.outcomes || [])) {
@@ -273,14 +285,31 @@ export class OddsApiService {
 
           if (!result[playerNorm]) result[playerNorm] = {};
           if (!result[playerNorm][mKey]) {
-            result[playerNorm][mKey] = { line: null, overOdds: null, underOdds: null, bookmakers: [] };
+            result[playerNorm][mKey] = {
+              line: null,
+              overOdds: null,
+              underOdds: null,
+              bookmaker: null,
+              bookmakers: []
+            };
           }
 
           const prop = result[playerNorm][mKey];
-          // Use the first bookmaker's line as the primary line
-          if (prop.line === null) prop.line = line;
-          if (side === 'over')  prop.overOdds  = price;
-          if (side === 'under') prop.underOdds = price;
+          // If DraftKings is the bookmaker or line is not set yet, set line & bookmaker
+          if (prop.line === null || (isDK && prop.bookmaker !== bmName)) {
+            prop.line = line;
+            prop.bookmaker = bmName;
+          }
+          if (side === 'over') {
+            if (prop.overOdds === null || (isDK && prop.bookmaker === bmName)) {
+              prop.overOdds = price;
+            }
+          }
+          if (side === 'under') {
+            if (prop.underOdds === null || (isDK && prop.bookmaker === bmName)) {
+              prop.underOdds = price;
+            }
+          }
 
           // Track all bookmakers for display
           let bmEntry = prop.bookmakers.find(b => b.name === bmName);
@@ -415,6 +444,9 @@ export class OddsApiService {
     const spreads = [];
     const totals = [];
     const moneylines = [];
+    const allSpreads = [];
+    const allTotals = [];
+    const allMoneylines = [];
 
     const toDecimal = (american) => {
       const p = Number(american);
@@ -429,25 +461,27 @@ export class OddsApiService {
     };
 
     for (const bm of sortedBms) {
-      const bmTitle = bm.title || 'DraftKings';
+      const bmTitle = bm.title || 'Sportsbook';
       for (const m of (bm.markets || [])) {
         if (m.key === 'spreads') {
           for (const out of (m.outcomes || [])) {
             if (out.point !== undefined && out.price !== undefined) {
               const isHome = this._teamsMatch(out.name, homeName) || this._teamsMatch(out.name, homeShort);
               const teamShort = isHome ? (homeShort || homeName) : (awayShort || awayName);
+              const entry = {
+                team: out.name,
+                teamShort,
+                isHome,
+                point: out.point,
+                price: out.price,
+                priceStr: fmtOdds(out.price),
+                decimal: toDecimal(out.price),
+                bookmaker: bmTitle
+              };
+              allSpreads.push(entry);
               const exists = spreads.some(s => s.isHome === isHome);
               if (!exists) {
-                spreads.push({
-                  team: out.name,
-                  teamShort,
-                  isHome,
-                  point: out.point,
-                  price: out.price,
-                  priceStr: fmtOdds(out.price),
-                  decimal: toDecimal(out.price),
-                  bookmaker: bmTitle
-                });
+                spreads.push(entry);
               }
             }
           }
@@ -455,16 +489,18 @@ export class OddsApiService {
           for (const out of (m.outcomes || [])) {
             if (out.point !== undefined && out.price !== undefined) {
               const side = (out.name || '').toLowerCase() === 'over' ? 'Over' : 'Under';
+              const entry = {
+                side,
+                point: out.point,
+                price: out.price,
+                priceStr: fmtOdds(out.price),
+                decimal: toDecimal(out.price),
+                bookmaker: bmTitle
+              };
+              allTotals.push(entry);
               const exists = totals.some(t => t.side === side);
               if (!exists) {
-                totals.push({
-                  side,
-                  point: out.point,
-                  price: out.price,
-                  priceStr: fmtOdds(out.price),
-                  decimal: toDecimal(out.price),
-                  bookmaker: bmTitle
-                });
+                totals.push(entry);
               }
             }
           }
@@ -473,17 +509,19 @@ export class OddsApiService {
             if (out.price !== undefined) {
               const isHome = this._teamsMatch(out.name, homeName) || this._teamsMatch(out.name, homeShort);
               const teamShort = isHome ? (homeShort || homeName) : (awayShort || awayName);
+              const entry = {
+                team: out.name,
+                teamShort,
+                isHome,
+                price: out.price,
+                priceStr: fmtOdds(out.price),
+                decimal: toDecimal(out.price),
+                bookmaker: bmTitle
+              };
+              allMoneylines.push(entry);
               const exists = moneylines.some(ml => ml.isHome === isHome);
               if (!exists) {
-                moneylines.push({
-                  team: out.name,
-                  teamShort,
-                  isHome,
-                  price: out.price,
-                  priceStr: fmtOdds(out.price),
-                  decimal: toDecimal(out.price),
-                  bookmaker: bmTitle
-                });
+                moneylines.push(entry);
               }
             }
           }
@@ -496,6 +534,9 @@ export class OddsApiService {
       spreads,
       totals,
       moneylines,
+      allSpreads,
+      allTotals,
+      allMoneylines,
       bookmakers: sortedBms.map(b => b.title)
     };
   }
@@ -592,7 +633,16 @@ export class OddsApiService {
     if (!prop || prop.line === null) return null;
     const over  = prop.overOdds  != null ? this._fmtOdds(prop.overOdds)  : '';
     const under = prop.underOdds != null ? this._fmtOdds(prop.underOdds) : '';
-    return { line: prop.line, overOdds: over, underOdds: under, bookmakers: prop.bookmakers };
+    const book = prop.bookmaker || (prop.bookmakers && prop.bookmakers[0]?.name) || 'Sportsbook';
+    return {
+      line: prop.line,
+      overOdds: over,
+      underOdds: under,
+      rawOverOdds: prop.overOdds,
+      rawUnderOdds: prop.underOdds,
+      bookmaker: book,
+      bookmakers: prop.bookmakers || []
+    };
   }
 
   _fmtOdds(n) {

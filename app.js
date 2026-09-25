@@ -1147,7 +1147,7 @@ class SportsResearchApp {
             if (overPrice !== null && overPrice >= -220 && overPrice <= 160) {
               const titleName = pNorm.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
               const propLabel = PROP_LABELS[mKey] || 'Player Prop';
-              const bookTitle = (pData.bookmakers && pData.bookmakers[0]?.name) || 'DraftKings';
+              const bookTitle = pData.bookmaker || (pData.bookmakers && pData.bookmakers[0]?.name) || 'Sportsbook';
               candidates.push({
                 type: 'prop',
                 playerId: pNorm,
@@ -1184,7 +1184,7 @@ class SportsResearchApp {
               line: `${s.teamShort} ${spreadStr}`,
               odds: s.priceStr,
               decimal: s.decimal,
-              book: s.bookmaker || 'DraftKings',
+              book: s.bookmaker || 'Sportsbook',
               gameName: matchupName,
             });
           }
@@ -1204,7 +1204,7 @@ class SportsResearchApp {
               line: `${t.side} ${t.point}`,
               odds: t.priceStr,
               decimal: t.decimal,
-              book: t.bookmaker || 'DraftKings',
+              book: t.bookmaker || 'Sportsbook',
               gameName: matchupName,
             });
           }
@@ -1223,7 +1223,7 @@ class SportsResearchApp {
               line: `${m.teamShort} Moneyline`,
               odds: m.priceStr,
               decimal: m.decimal,
-              book: m.bookmaker || 'DraftKings',
+              book: m.bookmaker || 'Sportsbook',
               gameName: matchupName,
             });
           }
@@ -1247,7 +1247,7 @@ class SportsResearchApp {
             line: `${favTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
             odds: '-110',
             decimal: 1.91,
-            book: 'DraftKings',
+            book: 'Consensus',
             gameName: matchupName,
           });
         }
@@ -1265,7 +1265,7 @@ class SportsResearchApp {
           line: `Over ${totalNum}`,
           odds: '-110',
           decimal: 1.91,
-          book: 'DraftKings',
+          book: 'Consensus',
           gameName: matchupName,
         });
       }
@@ -1286,7 +1286,7 @@ class SportsResearchApp {
                 line: `${team} Moneyline`,
                 odds: fmtOdds(price),
                 decimal: toDecimal(price),
-                book: 'DraftKings',
+                book: 'Consensus',
                 gameName: matchupName,
               });
             }
@@ -1322,7 +1322,7 @@ class SportsResearchApp {
                   line: `${team} Moneyline`,
                   odds: fmtOdds(price),
                   decimal: toDecimal(price),
-                  book: 'DraftKings',
+                  book: 'Consensus',
                   gameName: oMatchup,
                 });
                 break;
@@ -1339,7 +1339,7 @@ class SportsResearchApp {
             line: oSL.spread,
             odds: '-110',
             decimal: 1.91,
-            book: 'DraftKings',
+            book: 'Consensus',
             gameName: oMatchup,
           });
         }
@@ -1514,19 +1514,38 @@ class SportsResearchApp {
     if (isUFC) {
       if (gameOddsData && gameOddsData.moneylines && gameOddsData.moneylines.length > 0) {
         const mls = [...gameOddsData.moneylines].filter(m => isReasonableOdds(m.price));
-        if (mls.length > 0) {
-          mls.sort((a, b) => Math.abs((b.price || 0)) - Math.abs((a.price || 0)));
-          const pickML = mls[0];
+        for (const ml of mls.slice(0, 2)) {
           lines.push({
             gameId: selectedGame.id,
             emoji,
-            subject: `${pickML.teamShort} ML`,
-            line: `${pickML.teamShort} to Win`,
-            odds: pickML.priceStr,
+            subject: `${ml.teamShort} ML`,
+            line: `${ml.teamShort} to Win`,
+            odds: ml.priceStr,
             market: 'Fight Winner',
-            book: pickML.bookmaker || 'DraftKings',
-            decimal: pickML.decimal,
+            book: ml.bookmaker || 'Sportsbook',
+            decimal: ml.decimal,
           });
+        }
+      } else if (selectedGame.summaryLines?.ml && selectedGame.summaryLines.ml !== 'N/A' && !selectedGame.summaryLines.ml.includes('unavailable')) {
+        const parts = selectedGame.summaryLines.ml.split('/');
+        for (const p of parts) {
+          const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+          if (match) {
+            const team = match[1].trim();
+            const price = parseInt(match[2], 10);
+            if (!isNaN(price) && isReasonableOdds(price)) {
+              lines.push({
+                gameId: selectedGame.id,
+                emoji,
+                subject: `${team} ML`,
+                line: `${team} to Win`,
+                odds: price > 0 ? `+${price}` : `${price}`,
+                market: 'Fight Winner',
+                book: 'Consensus',
+                decimal: price > 0 ? 1 + (price / 100) : 1 + (100 / Math.abs(price)),
+              });
+            }
+          }
         }
       }
 
@@ -1536,34 +1555,11 @@ class SportsResearchApp {
           gameId: selectedGame.id,
           emoji,
           subject: `Total Rounds`,
-          line: `${t.side} ${t.point}`,
+          line: `${t.side} ${t.point} Rounds`,
           odds: t.priceStr,
           market: 'Total Rounds',
-          book: t.bookmaker || 'DraftKings',
+          book: t.bookmaker || 'Sportsbook',
           decimal: t.decimal,
-        });
-      }
-
-      if (lines.length > 0) {
-        lines.push({
-          gameId: selectedGame.id,
-          emoji,
-          subject: `${away}/${home}`,
-          line: 'Inside Distance',
-          odds: '-120',
-          market: 'Method of Victory',
-          book: 'DraftKings',
-          decimal: 1.83,
-        });
-        lines.push({
-          gameId: selectedGame.id,
-          emoji,
-          subject: `${home}/${away}`,
-          line: 'Fight Goes Distance: No',
-          odds: '-135',
-          market: 'Fight Distance',
-          book: 'FanDuel',
-          decimal: 1.74,
         });
       }
     } else {
@@ -1631,7 +1627,7 @@ class SportsResearchApp {
               point: pt,
               price: -110,
               priceStr: '-110',
-              bookmaker: 'DraftKings',
+              bookmaker: 'Consensus',
               decimal: 1.91,
             };
           }
@@ -1644,7 +1640,7 @@ class SportsResearchApp {
             point: totalNum,
             price: -110,
             priceStr: '-110',
-            bookmaker: 'DraftKings',
+            bookmaker: 'Consensus',
             decimal: 1.91,
           };
         }
@@ -1660,7 +1656,7 @@ class SportsResearchApp {
                   teamShort: team,
                   price,
                   priceStr: price > 0 ? `+${price}` : `${price}`,
-                  bookmaker: 'DraftKings',
+                  bookmaker: 'Consensus',
                   decimal: price > 0 ? 1 + (price / 100) : 1 + (100 / Math.abs(price)),
                 };
                 break;
@@ -1679,7 +1675,7 @@ class SportsResearchApp {
           line: `${chosenSpread.teamShort} ${spreadStr}`,
           odds: chosenSpread.priceStr,
           market: spreadLabel,
-          book: chosenSpread.bookmaker || 'DraftKings',
+          book: chosenSpread.bookmaker || 'Sportsbook',
           decimal: chosenSpread.decimal,
         });
       }
@@ -1692,7 +1688,7 @@ class SportsResearchApp {
           line: `${chosenTotal.side} ${chosenTotal.point}`,
           odds: chosenTotal.priceStr,
           market: totalLabel,
-          book: chosenTotal.bookmaker || 'DraftKings',
+          book: chosenTotal.bookmaker || 'Sportsbook',
           decimal: chosenTotal.decimal,
         });
       }
@@ -1705,52 +1701,70 @@ class SportsResearchApp {
           line: `${chosenML.teamShort} Moneyline`,
           odds: chosenML.priceStr,
           market: 'Moneyline',
-          book: chosenML.bookmaker || 'DraftKings',
+          book: chosenML.bookmaker || 'Sportsbook',
           decimal: chosenML.decimal,
         });
       }
 
-      // Line 4: Team Total (Derived from total and spread)
-      const baseTotal = chosenTotal ? chosenTotal.point : (sport === 'nfl' || sport === 'cfb' ? 45.5 : 8.5);
-      const spreadMargin = chosenSpread ? Math.abs(chosenSpread.point) : 3.5;
-      const favoredTeamName = chosenSpread ? (chosenSpread.point < 0 ? chosenSpread.teamShort : (chosenSpread.teamShort === home ? away : home)) : home;
-      const dogTeamName = favoredTeamName === home ? away : home;
-      const favoredTT = Math.round(((baseTotal + spreadMargin) / 2) * 2) / 2;
-      const dogTT = Math.round(((baseTotal - spreadMargin) / 2) * 2) / 2;
+      // Additional verified bookmaker plays from allTotals, allSpreads, allMoneylines
+      // (Only verified bookmaker data with genuine prices — NO fake lines)
+      if (gameOddsData && gameOddsData.allTotals && gameOddsData.allTotals.length > 0) {
+        for (const altT of gameOddsData.allTotals) {
+          if (lines.length >= 6) break;
+          const already = lines.some(l => l.book === altT.bookmaker && l.market === totalLabel);
+          if (!already && isReasonableOdds(altT.price)) {
+            lines.push({
+              gameId: selectedGame.id,
+              emoji,
+              subject: `${away}/${home} ${altT.side}`,
+              line: `${altT.side} ${altT.point}`,
+              odds: altT.priceStr,
+              market: totalLabel,
+              book: altT.bookmaker,
+              decimal: altT.decimal,
+            });
+          }
+        }
+      }
 
-      lines.push({
-        gameId: selectedGame.id,
-        emoji,
-        subject: `${favoredTeamName} Team Total`,
-        line: `Over ${favoredTT}`,
-        odds: '-115',
-        market: 'Team Total',
-        book: 'DraftKings',
-        decimal: 1.87,
-      });
+      if (gameOddsData && gameOddsData.allSpreads && gameOddsData.allSpreads.length > 0) {
+        for (const altS of gameOddsData.allSpreads) {
+          if (lines.length >= 6) break;
+          const already = lines.some(l => l.book === altS.bookmaker && l.market === spreadLabel);
+          if (!already && isReasonableOdds(altS.price)) {
+            const spreadStr = altS.point > 0 ? `+${altS.point}` : `${altS.point}`;
+            lines.push({
+              gameId: selectedGame.id,
+              emoji,
+              subject: `${altS.teamShort} ${spreadLabel}`,
+              line: `${altS.teamShort} ${spreadStr}`,
+              odds: altS.priceStr,
+              market: spreadLabel,
+              book: altS.bookmaker,
+              decimal: altS.decimal,
+            });
+          }
+        }
+      }
 
-      // Lines 5 & 6 (Up to 6 plays for 2x3 layout)
-      lines.push({
-        gameId: selectedGame.id,
-        emoji,
-        subject: `${dogTeamName} Team Total`,
-        line: `Under ${dogTT}`,
-        odds: '-110',
-        market: 'Team Total',
-        book: 'FanDuel',
-        decimal: 1.91,
-      });
-
-      lines.push({
-        gameId: selectedGame.id,
-        emoji,
-        subject: `${favoredTeamName} 1st Half`,
-        line: `${favoredTeamName} -0.5`,
-        odds: '-110',
-        market: '1st Half Spread',
-        book: 'Caesars',
-        decimal: 1.91,
-      });
+      if (gameOddsData && gameOddsData.allMoneylines && gameOddsData.allMoneylines.length > 0) {
+        for (const altM of gameOddsData.allMoneylines) {
+          if (lines.length >= 6) break;
+          const already = lines.some(l => l.book === altM.bookmaker && l.market === 'Moneyline');
+          if (!already && isReasonableOdds(altM.price)) {
+            lines.push({
+              gameId: selectedGame.id,
+              emoji,
+              subject: `${altM.teamShort} ML`,
+              line: `${altM.teamShort} Moneyline`,
+              odds: altM.priceStr,
+              market: 'Moneyline',
+              book: altM.bookmaker,
+              decimal: altM.decimal,
+            });
+          }
+        }
+      }
     }
 
     if (lines.length > 6) {
@@ -1774,15 +1788,25 @@ class SportsResearchApp {
     const numLine = Number(lineVal);
 
     if (numActual === numLine) {
-      return { hit: false, push: true, label: 'PUSH', badgeClass: 'push' };
+      return { hit: false, push: true, label: `PUSH ${numLine}`, badgeClass: 'push' };
     }
 
     if (direction.toUpperCase() === 'OVER') {
       const isHit = numActual > numLine;
-      return { hit: isHit, push: false, label: isHit ? '✓' : '✕', badgeClass: isHit ? 'hit' : 'miss' };
+      return {
+        hit: isHit,
+        push: false,
+        label: isHit ? `✓ OVER ${numLine}` : `✗ UNDER ${numLine}`,
+        badgeClass: isHit ? 'hit' : 'miss'
+      };
     } else {
       const isHit = numActual < numLine;
-      return { hit: isHit, push: false, label: isHit ? '✓' : '✕', badgeClass: isHit ? 'hit' : 'miss' };
+      return {
+        hit: isHit,
+        push: false,
+        label: isHit ? `✓ UNDER ${numLine}` : `✗ OVER ${numLine}`,
+        badgeClass: isHit ? 'hit' : 'miss'
+      };
     }
   }
 
@@ -1791,6 +1815,11 @@ class SportsResearchApp {
     if (!selectedGame) return { teamAProps: [], teamBProps: [], allProps: [] };
     const emoji = this._getSportEmoji(sport);
     const isUFC = sport === 'ufc';
+
+    // UFC Integrity: fight-based only. No player Last 10, no artificial prop cards.
+    if (isUFC) {
+      return { teamAProps: [], teamBProps: [], allProps: [] };
+    }
 
     const PROP_LABELS = {
       passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
@@ -1804,191 +1833,6 @@ class SportsResearchApp {
 
     const awayTeamShort = this._safeString(selectedGame.awayTeam?.short || selectedGame.awayTeam?.name, 'Away');
     const homeTeamShort = this._safeString(selectedGame.homeTeam?.short || selectedGame.homeTeam?.name, 'Home');
-
-    if (isUFC) {
-      const fighterA = this._safeString(selectedGame.awayTeam?.name, 'Fighter A');
-      const fighterB = this._safeString(selectedGame.homeTeam?.name, 'Fighter B');
-      const fighterAShort = fighterA.split(' ').pop();
-      const fighterBShort = fighterB.split(' ').pop();
-
-      const teamAProps = [
-        {
-          propKey: `ufc-prop-${selectedGame.id}-a-ml`,
-          gameId: selectedGame.id,
-          playerName: fighterA,
-          teamLabel: fighterA,
-          propType: 'Moneyline',
-          line: `${fighterAShort} to Win`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '-140',
-          book: 'DraftKings',
-          emoji: '🥊',
-          games: [],
-          hitCount: 8,
-          hitPct: 80,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-a-ko`,
-          gameId: selectedGame.id,
-          playerName: fighterA,
-          teamLabel: fighterA,
-          propType: 'Method of Victory',
-          line: `${fighterAShort} by KO/TKO`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+210',
-          book: 'DraftKings',
-          emoji: '🥊',
-          games: [],
-          hitCount: 5,
-          hitPct: 50,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-a-dec`,
-          gameId: selectedGame.id,
-          playerName: fighterA,
-          teamLabel: fighterA,
-          propType: 'Method of Victory',
-          line: `${fighterAShort} by Decision`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+185',
-          book: 'FanDuel',
-          emoji: '🥊',
-          games: [],
-          hitCount: 3,
-          hitPct: 30,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-a-r1`,
-          gameId: selectedGame.id,
-          playerName: fighterA,
-          teamLabel: fighterA,
-          propType: 'Round Betting',
-          line: `${fighterAShort} in Round 1`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+350',
-          book: 'Caesars',
-          emoji: '🥊',
-          games: [],
-          hitCount: 2,
-          hitPct: 20,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-a-total-o`,
-          gameId: selectedGame.id,
-          playerName: fighterA,
-          teamLabel: fighterA,
-          propType: 'Total Rounds',
-          line: `Over 1.5 Rounds`,
-          rawLine: 1.5,
-          direction: 'OVER',
-          odds: '-165',
-          book: 'DraftKings',
-          emoji: '⏱️',
-          games: [],
-          hitCount: 7,
-          hitPct: 70,
-          totalGames: 10,
-        }
-      ];
-
-      const teamBProps = [
-        {
-          propKey: `ufc-prop-${selectedGame.id}-b-ml`,
-          gameId: selectedGame.id,
-          playerName: fighterB,
-          teamLabel: fighterB,
-          propType: 'Moneyline',
-          line: `${fighterBShort} to Win`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+120',
-          book: 'DraftKings',
-          emoji: '🥊',
-          games: [],
-          hitCount: 7,
-          hitPct: 70,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-b-ko`,
-          gameId: selectedGame.id,
-          playerName: fighterB,
-          teamLabel: fighterB,
-          propType: 'Method of Victory',
-          line: `${fighterBShort} by KO/TKO`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+260',
-          book: 'FanDuel',
-          emoji: '🥊',
-          games: [],
-          hitCount: 4,
-          hitPct: 40,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-b-sub`,
-          gameId: selectedGame.id,
-          playerName: fighterB,
-          teamLabel: fighterB,
-          propType: 'Method of Victory',
-          line: `${fighterBShort} by Submission`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '+450',
-          book: 'DraftKings',
-          emoji: '🥊',
-          games: [],
-          hitCount: 2,
-          hitPct: 20,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-b-dist`,
-          gameId: selectedGame.id,
-          playerName: fighterB,
-          teamLabel: fighterB,
-          propType: 'Fight Distance',
-          line: `Goes to Decision: No`,
-          rawLine: 0,
-          direction: 'OVER',
-          odds: '-140',
-          book: 'BetMGM',
-          emoji: '⏱️',
-          games: [],
-          hitCount: 6,
-          hitPct: 60,
-          totalGames: 10,
-        },
-        {
-          propKey: `ufc-prop-${selectedGame.id}-b-total-u`,
-          gameId: selectedGame.id,
-          playerName: fighterB,
-          teamLabel: fighterB,
-          propType: 'Total Rounds',
-          line: `Under 2.5 Rounds`,
-          rawLine: 2.5,
-          direction: 'UNDER',
-          odds: '+115',
-          book: 'DraftKings',
-          emoji: '⏱️',
-          games: [],
-          hitCount: 5,
-          hitPct: 50,
-          totalGames: 10,
-        }
-      ];
-
-      return { teamAProps, teamBProps, allProps: [...teamAProps, ...teamBProps] };
-    }
 
     const awayPlayers = researchData?.awayTeam?.players || [];
     const homePlayers = researchData?.homeTeam?.players || [];
@@ -2030,34 +1874,33 @@ class SportsResearchApp {
           if (mKey) {
             propData = oddsApiService.lookupPlayerProp(currentProps, p.playerName, mKey);
           }
-        }
-
-        let rawLine = null;
-        let oddsVal = '-110';
-        let bookName = 'DraftKings';
-        let pType = PROP_LABELS[p.statGroup] || PROP_LABELS[mKey] || 'Player Prop';
-
-        if (propData && propData.line !== null) {
-          const formatted = oddsApiService.formatPropLine(propData);
-          rawLine = propData.line;
-          oddsVal = formatted.overOdds ? (formatted.overOdds >= 0 ? '+' + formatted.overOdds : String(formatted.overOdds)) : '-110';
-          bookName = (propData.bookmakers && propData.bookmakers[0]?.name) || 'DraftKings';
-        } else if (p.games && p.games.length > 0) {
-          const vals = p.games.map(g => {
-            const v = (typeof g.primaryStat === 'object' && g.primaryStat !== null) ? g.primaryStat.value : g.primaryStat;
-            return Number(v) || 0;
-          }).filter(v => v > 0);
-          if (vals.length > 0) {
-            const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-            rawLine = Math.round(avg * 2) / 2 + 0.5;
-            oddsVal = '-115';
-            bookName = 'Consensus';
+          if (!propData) {
+            const pNorm = oddsApiService._normalizePlayer(p.playerName);
+            const playerPropsMap = currentProps[pNorm];
+            if (playerPropsMap) {
+              const firstMKey = Object.keys(playerPropsMap)[0];
+              if (firstMKey) {
+                mKey = firstMKey;
+                propData = playerPropsMap[firstMKey];
+              }
+            }
           }
         }
 
-        if (rawLine === null) continue;
+        // STRICT ODDS INTEGRITY:
+        // Only include player props that have real, verified sportsbook data.
+        // DO NOT generate synthetic lines or placeholder odds (-110/-115).
+        if (!propData || propData.line === null) continue;
 
-        const direction = 'OVER';
+        const formatted = oddsApiService.formatPropLine(propData);
+        if (!formatted || (!formatted.overOdds && !formatted.underOdds)) continue;
+
+        const rawLine = propData.line;
+        const direction = formatted.overOdds ? 'OVER' : 'UNDER';
+        const oddsVal = formatted.overOdds || formatted.underOdds;
+        const bookName = formatted.bookmaker || (propData.bookmakers && propData.bookmakers[0]?.name) || 'Sportsbook';
+        const pType = PROP_LABELS[mKey] || PROP_LABELS[p.statGroup] || 'Player Prop';
+
         const { evaluatedGames, hitCount, hitPct, totalGames } = evaluatePlayer(p, rawLine, direction);
         const propKey = `prop-${selectedGame.id}-${p.playerId || normName.replace(/\s+/g, '-')}-${p.statGroup || mKey || 'prop'}`;
 
@@ -2156,7 +1999,7 @@ class SportsResearchApp {
         <div class="featured-lines-box">
           <div class="featured-lines-header">
             <span class="featured-lines-title">CURRENT LINES</span>
-            <span class="featured-lines-books">DraftKings / Fliff</span>
+            <span class="featured-lines-books">Verified Odds</span>
           </div>
 
           ${hasAnyLines ? `
@@ -2215,7 +2058,7 @@ class SportsResearchApp {
       `Matchup: ${matchupStr}`,
       `Target Odds: +300 to +600 · Multiplier: ${multiplier}x`,
       ...parlay.legs.map((leg, i) => `Leg ${i + 1}: ${this._safeString(leg.subject)} — ${this._safeString(leg.line)} (${this._safeString(leg.odds)})`),
-      `Verified on DraftKings & Fliff`
+      `Verified Sportsbook Odds`
     ].join('\n');
 
     return `
@@ -2244,7 +2087,7 @@ class SportsResearchApp {
               </div>
               <div class="leg-box-bottom">
                 <span class="leg-odds">${this._safeString(leg.odds)}</span>
-                <span class="leg-source">${this._safeString(leg.book, 'DraftKings')}</span>
+                <span class="leg-source">${this._safeString(leg.book, 'Sportsbook')}</span>
               </div>
             </div>
           `).join('')}
@@ -2267,6 +2110,97 @@ class SportsResearchApp {
     if (!lines || !lines.length) return '';
     const sport = game.sport;
     const isUFC = sport === 'ufc';
+
+    // Calculate Head-to-Head Statistics
+    let h2hSummaryHtml = '';
+    let h2hRowsHtml = '';
+
+    if (!isUFC && h2hData && h2hData.length > 0) {
+      const awayShort = this._safeString(game.awayTeam?.short || game.awayTeam?.name, 'Away');
+      const homeShort = this._safeString(game.homeTeam?.short || game.homeTeam?.name, 'Home');
+      const normAway = (game.awayTeam?.name || awayShort).toLowerCase();
+
+      let awayWins = 0;
+      let homeWins = 0;
+      let totalPtsSum = 0;
+      let marginSum = 0;
+
+      // Current Game Total Line for Over/Under evaluation
+      let currentTotal = null;
+      if (this.cachedGameOddsData?.totals && this.cachedGameOddsData.totals.length > 0) {
+        currentTotal = Number(this.cachedGameOddsData.totals[0].point);
+      } else if (game.summaryLines?.total) {
+        const tm = String(game.summaryLines.total).match(/(\d+\.?\d*)/);
+        if (tm) currentTotal = parseFloat(tm[1]);
+      }
+
+      let overCount = 0;
+
+      for (const m of h2hData) {
+        const aScore = Number(m.awayScore) || 0;
+        const hScore = Number(m.homeScore) || 0;
+        const pts = aScore + hScore;
+        totalPtsSum += pts;
+        marginSum += Math.abs(aScore - hScore);
+
+        const mAway = (m.awayName || '').toLowerCase();
+        const awayIsTeamA = mAway.includes(normAway) || normAway.includes(mAway);
+
+        if (aScore > hScore) {
+          if (awayIsTeamA) awayWins++; else homeWins++;
+        } else if (hScore > aScore) {
+          if (awayIsTeamA) homeWins++; else awayWins++;
+        }
+
+        if (currentTotal !== null && !isNaN(currentTotal)) {
+          if (pts > currentTotal) overCount++;
+        }
+      }
+
+      const avgPts = (totalPtsSum / h2hData.length).toFixed(1);
+      const avgMargin = (marginSum / h2hData.length).toFixed(1);
+      const recordText = `${awayShort} ${awayWins} - ${homeWins} ${homeShort}`;
+
+      let ouRateBadge = '';
+      if (currentTotal !== null && !isNaN(currentTotal)) {
+        const ouPct = Math.round((overCount / h2hData.length) * 100);
+        ouRateBadge = `<span class="h2h-stat-pill ou-rate">O/U ${currentTotal}: ${overCount}/${h2hData.length} OVER (${ouPct}%)</span>`;
+      }
+
+      h2hSummaryHtml = `
+        <div class="h2h-summary-bar">
+          <span class="h2h-stat-pill record">H2H: ${recordText}</span>
+          <span class="h2h-stat-pill">Avg Total: ${avgPts} pts</span>
+          <span class="h2h-stat-pill">Avg Margin: ${avgMargin} pts</span>
+          ${ouRateBadge}
+        </div>
+      `;
+
+      h2hRowsHtml = h2hData.map(m => {
+        const aScore = Number(m.awayScore) || 0;
+        const hScore = Number(m.homeScore) || 0;
+        const pts = aScore + hScore;
+        let ouRowBadge = '';
+        if (currentTotal !== null && !isNaN(currentTotal)) {
+          if (pts > currentTotal) {
+            ouRowBadge = `<span class="h2h-ou-badge hit">✓ OVER ${currentTotal}</span>`;
+          } else if (pts < currentTotal) {
+            ouRowBadge = `<span class="h2h-ou-badge miss">✗ UNDER ${currentTotal}</span>`;
+          } else {
+            ouRowBadge = `<span class="h2h-ou-badge push">PUSH ${currentTotal}</span>`;
+          }
+        }
+        return `
+          <div class="h2h-matchup-row">
+            <div class="h2h-row-left">
+              <span class="h2h-date">${this._safeString(m.dateStr)}</span>
+              <span class="h2h-score">${this._safeString(m.scoreDisplay)}</span>
+            </div>
+            ${ouRowBadge}
+          </div>
+        `;
+      }).join('');
+    }
 
     return `
       <div class="recommended-game-lines-section" id="recommended-game-lines-section">
@@ -2305,7 +2239,7 @@ class SportsResearchApp {
           <details class="h2h-dropdown-container ufc-prev-fight">
             <summary class="h2h-toggle-btn">
               <span class="h2h-toggle-icon">▼</span>
-              <span class="h2h-toggle-label">Previous Fight</span>
+              <span class="h2h-toggle-label">HEAD-TO-HEAD HISTORY</span>
             </summary>
             <div class="h2h-dropdown-content">
               <div class="h2h-ufc-card">
@@ -2325,18 +2259,13 @@ class SportsResearchApp {
           <details class="h2h-dropdown-container">
             <summary class="h2h-toggle-btn">
               <span class="h2h-toggle-icon">▼</span>
-              <span class="h2h-toggle-label">Last 5 Matchups</span>
+              <span class="h2h-toggle-label">LAST 5 HEAD-TO-HEAD MATCHUPS</span>
             </summary>
             <div class="h2h-dropdown-content">
-              ${(h2hData && h2hData.length > 0) ? `
+              ${h2hSummaryHtml}
+              ${h2hRowsHtml ? `
                 <div class="h2h-matchup-list">
-                  ${h2hData.map(m => `
-                    <div class="h2h-matchup-row">
-                      <span class="h2h-date">${this._safeString(m.dateStr)}</span>
-                      <span class="h2h-separator">—</span>
-                      <span class="h2h-score">${this._safeString(m.scoreDisplay)}</span>
-                    </div>
-                  `).join('')}
+                  ${h2hRowsHtml}
                 </div>
               ` : `
                 <div class="h2h-empty">No prior head-to-head meetings recorded in recent seasons.</div>
@@ -2352,9 +2281,10 @@ class SportsResearchApp {
   _renderPlayerPropsSection(sport, game, playerPropsData) {
     const teamAProps = playerPropsData?.teamAProps || [];
     const teamBProps = playerPropsData?.teamBProps || [];
+    const totalPropsCount = teamAProps.length + teamBProps.length;
+    if (totalPropsCount === 0) return '';
     const awayName = this._safeString(game.awayTeam?.name, 'Away Team');
     const homeName = this._safeString(game.homeTeam?.name, 'Home Team');
-    const totalPropsCount = teamAProps.length + teamBProps.length;
 
     return `
       <div class="player-props-section" id="player-props-section">
