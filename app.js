@@ -1355,6 +1355,8 @@ class SportsResearchApp {
       let totalCount = 0;
       const seenPlayers = new Set();
       const seenGames = new Set();
+      // Track MLs per game: gameKey → array of team sides
+      const mlBySide = {};
 
       for (const leg of combo) {
         if (leg.type === 'spread') {
@@ -1364,6 +1366,18 @@ class SportsResearchApp {
         if (leg.type === 'total') {
           totalCount++;
           if (totalCount > 1) return true;
+        }
+        if (leg.type === 'ml') {
+          // Prevent: two MLs from the same game (both sides = opposite payout, invalid parlay)
+          const gameKey = leg.gameName || leg.gameId || '';
+          if (gameKey) {
+            if (!mlBySide[gameKey]) mlBySide[gameKey] = new Set();
+            const sideKey = leg.sideId || leg.teamLabel || leg.label || '';
+            if (mlBySide[gameKey].has(sideKey)) return true;
+            mlBySide[gameKey].add(sideKey);
+            // If we now have 2+ sides from this game, reject (both teams of same game = conflict)
+            if (mlBySide[gameKey].size >= 2) return true;
+          }
         }
         if (leg.type === 'prop') {
           if (seenPlayers.has(leg.playerId)) return true;
@@ -1823,7 +1837,11 @@ class SportsResearchApp {
 
     const PROP_LABELS = {
       passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
-      batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points', scoring: 'Points', skating: 'Points',
+      batting: 'Hits', pitching: 'Strikeouts',
+      // NHL ESPN stat groups
+      forwards: 'Shots on Goal', defenses: 'Blocked Shots', goalies: 'Saves',
+      // Legacy
+      scoring: 'Points', skating: 'Points', goaltending: 'Saves',
       player_pass_yds: 'Passing Yards', player_rush_yds: 'Rushing Yards', player_reception_yds: 'Receiving Yards',
       player_receptions: 'Receptions', player_pass_tds: 'Pass Touchdowns', batter_hits: 'Hits',
       pitcher_strikeouts: 'Strikeouts', batter_total_bases: 'Total Bases', player_points: 'Points',
@@ -2361,6 +2379,7 @@ class SportsResearchApp {
                 <span class="prs-hit-pct">${p.hitPct}%</span>
               </div>
               <span class="prs-subtext">vs line (${this._safeString(p.line)})</span>
+              ${p.totalGames > 0 ? `<span class="prs-hot-cold ${p.hitPct > 50 ? 'hot' : (p.hitPct < 50 ? 'cold' : '')}">${p.hitPct > 50 ? '🔥 HOT' : (p.hitPct < 50 ? '❄️ COLD' : '〰 EVEN')}</span>` : ''}
             </div>
 
             <div class="prop-last10-table">
@@ -2601,6 +2620,35 @@ class SportsResearchApp {
       const tb = b.rawDate ? new Date(b.rawDate).getTime() : 0;
       return ta - tb;
     });
+
+    // For NHL (and NBA during off-seasons): if today has no upcoming games, auto-advance up to 7 days
+    const dateBasedSports = new Set(['nhl', 'nba', 'mlb']);
+    if ((!games || games.length === 0) && dateBasedSports.has(this.state.selectedSport)) {
+      const currentOffset = this.state.selectedSport === 'nhl' ? this.state.nhlDateOffset
+        : this.state.selectedSport === 'nba' ? this.state.nbaDateOffset
+        : this.state.mlbDateOffset;
+
+      for (let advance = 1; advance <= 7; advance++) {
+        const advancedOpts = { date: this.getDateParamForOffset(currentOffset + advance) };
+        try {
+          const advancedGames = await this.service.getUpcomingGames(this.state.selectedSport, '', advancedOpts);
+          const filtered = (advancedGames || []).filter(g => {
+            const s = (g.gameStatus || '').toUpperCase();
+            const d = (g.gameStatusDetail || '').toLowerCase();
+            return !(s === 'FINAL' || s === 'STATUS_FINAL' || s === 'POST' || s === 'COMPLETED' || s === 'F' || d.includes('final'));
+          });
+          if (filtered.length > 0) {
+            games = filtered;
+            // Update the offset state so the slate bar shows the right active date
+            if (this.state.selectedSport === 'nhl') this.state.nhlDateOffset = currentOffset + advance;
+            else if (this.state.selectedSport === 'nba') this.state.nbaDateOffset = currentOffset + advance;
+            else if (this.state.selectedSport === 'mlb') this.state.mlbDateOffset = currentOffset + advance;
+            this.renderSeasonSlateBar(); // refresh slate pills to reflect new active date
+            break;
+          }
+        } catch (err) { /* skip */ }
+      }
+    }
 
     this.currentUpcomingGames = games;
 

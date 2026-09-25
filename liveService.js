@@ -1604,7 +1604,11 @@ export class PlayerGameLogService {
       // MLB
       batting:      'Batting',
       pitching:     'Pitching',
-      // NHL
+      // NHL — ESPN boxscore uses these group names (NOT 'skating'/'goaltending')
+      forwards:     'Skating',
+      defenses:     'Defense',
+      goalies:      'Goaltending',
+      // Legacy NHL keys (kept for backward compatibility)
       skating:      'Skating',
       goaltending:  'Goaltending',
       // NBA
@@ -1619,7 +1623,11 @@ export class PlayerGameLogService {
       // MLB
       batting:      'hits',
       pitching:     'strikeouts',
-      // NHL
+      // NHL — ESPN boxscore uses these group names
+      forwards:     'shotsTotal',
+      defenses:     'blockedShots',
+      goalies:      'saves',
+      // Legacy NHL keys (backward compatibility)
       skating:      'points',
       goaltending:  'saves',
       // NBA
@@ -2000,7 +2008,11 @@ export class PlayerGameLogService {
       for (const r of records) {
         // Only include skill position stats (skip punting, kickReturns etc for brevity)
         const relevantGroups = new Set([
-          'passing','rushing','receiving','batting','pitching','skating','goaltending','scoring','defensive'
+          'passing','rushing','receiving','batting','pitching',
+          // NHL: ESPN boxscore uses 'forwards', 'defenses', 'goalies' (NOT 'skating'/'goaltending')
+          'forwards','defenses','goalies',
+          // Legacy/other sports
+          'skating','goaltending','scoring','defensive'
         ]);
         if (!relevantGroups.has(r.statGroup)) continue;
 

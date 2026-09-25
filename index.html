@@ -5461,6 +5461,30 @@ details[open] .h2h-toggle-icon {
   font-weight: 600;
 }
 
+.prs-hot-cold {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+.prs-hot-cold.hot {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+
+.prs-hot-cold.cold {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.prs-hot-cold:empty {
+  display: none;
+}
+
 .prop-last10-table {
   display: flex;
   flex-direction: column;
@@ -7375,7 +7399,11 @@ class PlayerGameLogService {
       // MLB
       batting:      'Batting',
       pitching:     'Pitching',
-      // NHL
+      // NHL — ESPN boxscore uses these group names (NOT 'skating'/'goaltending')
+      forwards:     'Skating',
+      defenses:     'Defense',
+      goalies:      'Goaltending',
+      // Legacy NHL keys (kept for backward compatibility)
       skating:      'Skating',
       goaltending:  'Goaltending',
       // NBA
@@ -7390,7 +7418,11 @@ class PlayerGameLogService {
       // MLB
       batting:      'hits',
       pitching:     'strikeouts',
-      // NHL
+      // NHL — ESPN boxscore uses these group names
+      forwards:     'shotsTotal',
+      defenses:     'blockedShots',
+      goalies:      'saves',
+      // Legacy NHL keys (backward compatibility)
       skating:      'points',
       goaltending:  'saves',
       // NBA
@@ -7771,7 +7803,11 @@ class PlayerGameLogService {
       for (const r of records) {
         // Only include skill position stats (skip punting, kickReturns etc for brevity)
         const relevantGroups = new Set([
-          'passing','rushing','receiving','batting','pitching','skating','goaltending','scoring','defensive'
+          'passing','rushing','receiving','batting','pitching',
+          // NHL: ESPN boxscore uses 'forwards', 'defenses', 'goalies' (NOT 'skating'/'goaltending')
+          'forwards','defenses','goalies',
+          // Legacy/other sports
+          'skating','goaltending','scoring','defensive'
         ]);
         if (!relevantGroups.has(r.statGroup)) continue;
 
@@ -10178,9 +10214,14 @@ const PROP_MARKET_MAP = {
   receiving: { yardsPrimary: 'player_reception_yds', tdPrimary: 'player_reception_tds', altMarkets: ['player_receptions'] },
   batting:   { yardsPrimary: 'batter_hits',       tdPrimary: null,               altMarkets: ['batter_total_bases','batter_home_runs'] },
   pitching:  { yardsPrimary: 'pitcher_strikeouts',tdPrimary: null,               altMarkets: ['pitcher_hits_allowed'] },
+  // NHL — ESPN boxscore groups
   forwards:  { yardsPrimary: 'player_shots_on_goal', tdPrimary: 'player_goals',  altMarkets: ['player_assists','player_points'] },
   defenses:  { yardsPrimary: 'player_shots_on_goal', tdPrimary: null,            altMarkets: [] },
+  goalies:   { yardsPrimary: null,               tdPrimary: null,               altMarkets: [] }, // goalies: no standard sportsbook prop
+  // Legacy NHL keys
+  skating:   { yardsPrimary: 'player_shots_on_goal', tdPrimary: 'player_goals',  altMarkets: ['player_assists','player_points'] },
   goaltending:{ yardsPrimary: null,               tdPrimary: null,               altMarkets: [] },
+  // NBA
   scoring:   { yardsPrimary: 'player_points',     tdPrimary: null,               altMarkets: ['player_rebounds','player_assists'] },
 };
 
@@ -10193,7 +10234,7 @@ const ESPN_STAT_LABELS = {
   interceptions: 'INT',
   hits: 'H', atBats: 'AB', runs: 'R', RBIs: 'RBI', homeRuns: 'HR', strikeouts: 'K',
   'fullInnings.partInnings': 'IP', earnedRuns: 'ER', walks: 'BB',
-  goals: 'G', assists: 'A', shotsTotal: 'SOG', plusMinus: '+/-',
+  goals: 'G', assists: 'A', shotsTotal: 'SOG', plusMinus: '+/-', saves: 'SV',
   points: 'Pts', rebounds: 'Reb',
 };
 
@@ -10204,8 +10245,12 @@ const PRIMARY_ESPN_KEY = {
   receiving:  'receivingYards',
   batting:    'hits',
   pitching:   'strikeouts',
+  // NHL
   forwards:   'shotsTotal',
   defenses:   'blockedShots',
+  goalies:    'saves',
+  // Legacy NHL
+  skating:    'points',
   scoring:    'points',
 };
 
@@ -12193,6 +12238,8 @@ class SportsResearchApp {
       let totalCount = 0;
       const seenPlayers = new Set();
       const seenGames = new Set();
+      // Track MLs per game: gameKey → array of team sides
+      const mlBySide = {};
 
       for (const leg of combo) {
         if (leg.type === 'spread') {
@@ -12202,6 +12249,18 @@ class SportsResearchApp {
         if (leg.type === 'total') {
           totalCount++;
           if (totalCount > 1) return true;
+        }
+        if (leg.type === 'ml') {
+          // Prevent: two MLs from the same game (both sides = opposite payout, invalid parlay)
+          const gameKey = leg.gameName || leg.gameId || '';
+          if (gameKey) {
+            if (!mlBySide[gameKey]) mlBySide[gameKey] = new Set();
+            const sideKey = leg.sideId || leg.teamLabel || leg.label || '';
+            if (mlBySide[gameKey].has(sideKey)) return true;
+            mlBySide[gameKey].add(sideKey);
+            // If we now have 2+ sides from this game, reject (both teams of same game = conflict)
+            if (mlBySide[gameKey].size >= 2) return true;
+          }
         }
         if (leg.type === 'prop') {
           if (seenPlayers.has(leg.playerId)) return true;
@@ -12661,7 +12720,11 @@ class SportsResearchApp {
 
     const PROP_LABELS = {
       passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
-      batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points', scoring: 'Points', skating: 'Points',
+      batting: 'Hits', pitching: 'Strikeouts',
+      // NHL ESPN stat groups
+      forwards: 'Shots on Goal', defenses: 'Blocked Shots', goalies: 'Saves',
+      // Legacy
+      scoring: 'Points', skating: 'Points', goaltending: 'Saves',
       player_pass_yds: 'Passing Yards', player_rush_yds: 'Rushing Yards', player_reception_yds: 'Receiving Yards',
       player_receptions: 'Receptions', player_pass_tds: 'Pass Touchdowns', batter_hits: 'Hits',
       pitcher_strikeouts: 'Strikeouts', batter_total_bases: 'Total Bases', player_points: 'Points',
@@ -13199,6 +13262,7 @@ class SportsResearchApp {
                 <span class="prs-hit-pct">${p.hitPct}%</span>
               </div>
               <span class="prs-subtext">vs line (${this._safeString(p.line)})</span>
+              ${p.totalGames > 0 ? `<span class="prs-hot-cold ${p.hitPct > 50 ? 'hot' : (p.hitPct < 50 ? 'cold' : '')}">${p.hitPct > 50 ? '🔥 HOT' : (p.hitPct < 50 ? '❄️ COLD' : '〰 EVEN')}</span>` : ''}
             </div>
 
             <div class="prop-last10-table">
@@ -13439,6 +13503,35 @@ class SportsResearchApp {
       const tb = b.rawDate ? new Date(b.rawDate).getTime() : 0;
       return ta - tb;
     });
+
+    // For NHL (and NBA during off-seasons): if today has no upcoming games, auto-advance up to 7 days
+    const dateBasedSports = new Set(['nhl', 'nba', 'mlb']);
+    if ((!games || games.length === 0) && dateBasedSports.has(this.state.selectedSport)) {
+      const currentOffset = this.state.selectedSport === 'nhl' ? this.state.nhlDateOffset
+        : this.state.selectedSport === 'nba' ? this.state.nbaDateOffset
+        : this.state.mlbDateOffset;
+
+      for (let advance = 1; advance <= 7; advance++) {
+        const advancedOpts = { date: this.getDateParamForOffset(currentOffset + advance) };
+        try {
+          const advancedGames = await this.service.getUpcomingGames(this.state.selectedSport, '', advancedOpts);
+          const filtered = (advancedGames || []).filter(g => {
+            const s = (g.gameStatus || '').toUpperCase();
+            const d = (g.gameStatusDetail || '').toLowerCase();
+            return !(s === 'FINAL' || s === 'STATUS_FINAL' || s === 'POST' || s === 'COMPLETED' || s === 'F' || d.includes('final'));
+          });
+          if (filtered.length > 0) {
+            games = filtered;
+            // Update the offset state so the slate bar shows the right active date
+            if (this.state.selectedSport === 'nhl') this.state.nhlDateOffset = currentOffset + advance;
+            else if (this.state.selectedSport === 'nba') this.state.nbaDateOffset = currentOffset + advance;
+            else if (this.state.selectedSport === 'mlb') this.state.mlbDateOffset = currentOffset + advance;
+            this.renderSeasonSlateBar(); // refresh slate pills to reflect new active date
+            break;
+          }
+        } catch (err) { /* skip */ }
+      }
+    }
 
     this.currentUpcomingGames = games;
 

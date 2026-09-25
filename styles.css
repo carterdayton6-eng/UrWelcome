@@ -5454,6 +5454,30 @@ details[open] .h2h-toggle-icon {
   font-weight: 600;
 }
 
+.prs-hot-cold {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+.prs-hot-cold.hot {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+
+.prs-hot-cold.cold {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.prs-hot-cold:empty {
+  display: none;
+}
+
 .prop-last10-table {
   display: flex;
   flex-direction: column;

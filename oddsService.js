@@ -26,9 +26,14 @@ const PROP_MARKET_MAP = {
   receiving: { yardsPrimary: 'player_reception_yds', tdPrimary: 'player_reception_tds', altMarkets: ['player_receptions'] },
   batting:   { yardsPrimary: 'batter_hits',       tdPrimary: null,               altMarkets: ['batter_total_bases','batter_home_runs'] },
   pitching:  { yardsPrimary: 'pitcher_strikeouts',tdPrimary: null,               altMarkets: ['pitcher_hits_allowed'] },
+  // NHL — ESPN boxscore groups
   forwards:  { yardsPrimary: 'player_shots_on_goal', tdPrimary: 'player_goals',  altMarkets: ['player_assists','player_points'] },
   defenses:  { yardsPrimary: 'player_shots_on_goal', tdPrimary: null,            altMarkets: [] },
+  goalies:   { yardsPrimary: null,               tdPrimary: null,               altMarkets: [] }, // goalies: no standard sportsbook prop
+  // Legacy NHL keys
+  skating:   { yardsPrimary: 'player_shots_on_goal', tdPrimary: 'player_goals',  altMarkets: ['player_assists','player_points'] },
   goaltending:{ yardsPrimary: null,               tdPrimary: null,               altMarkets: [] },
+  // NBA
   scoring:   { yardsPrimary: 'player_points',     tdPrimary: null,               altMarkets: ['player_rebounds','player_assists'] },
 };
 
@@ -41,7 +46,7 @@ const ESPN_STAT_LABELS = {
   interceptions: 'INT',
   hits: 'H', atBats: 'AB', runs: 'R', RBIs: 'RBI', homeRuns: 'HR', strikeouts: 'K',
   'fullInnings.partInnings': 'IP', earnedRuns: 'ER', walks: 'BB',
-  goals: 'G', assists: 'A', shotsTotal: 'SOG', plusMinus: '+/-',
+  goals: 'G', assists: 'A', shotsTotal: 'SOG', plusMinus: '+/-', saves: 'SV',
   points: 'Pts', rebounds: 'Reb',
 };
 
@@ -52,8 +57,12 @@ const PRIMARY_ESPN_KEY = {
   receiving:  'receivingYards',
   batting:    'hits',
   pitching:   'strikeouts',
+  // NHL
   forwards:   'shotsTotal',
   defenses:   'blockedShots',
+  goalies:    'saves',
+  // Legacy NHL
+  skating:    'points',
   scoring:    'points',
 };
 
