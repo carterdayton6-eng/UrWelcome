@@ -155,12 +155,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self.send_json(400, {'error': 'eventId required'})
                 if not markets:
                     return self.send_json(200, {'data': None, 'note': 'No markets'})
-                extra = {'date': date, 'dateFormat': 'iso', 'markets': markets, 'oddsFormat': 'american'}
+                extra = {'regions': 'us', 'date': date, 'dateFormat': 'iso', 'markets': markets, 'oddsFormat': 'american'}
                 status, data, rem = odds_api_call(
                     f'/v4/historical/sports/{odds_sport}/events/{event_id}/odds', extra
                 )
                 if status in (404, 422):
-                    return self.send_json(200, {'data': None, 'note': f'Unavailable ({status})'})
+                    return self.send_json(200, {'data': None, 'note': f'Unavailable ({status})', 'detail': data})
                 return self.send_json(status, {'data': data, 'remaining': rem})
 
             return self.send_json(400, {'error': 'mode must be events or odds'})

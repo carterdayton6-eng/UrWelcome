@@ -63,6 +63,7 @@ export default async function handler(req, res) {
       }
       const params = new URLSearchParams({
         apiKey: key,
+        regions: 'us',
         date,
         dateFormat: 'iso',
         markets: marketsToUse,
@@ -73,7 +74,8 @@ export default async function handler(req, res) {
       const remaining = r.headers.get('x-requests-remaining') || '?';
 
       if (r.status === 404 || r.status === 422) {
-        return res.status(200).json({ data: null, note: `Historical odds unavailable (HTTP ${r.status})`, remaining });
+        const errDetail = await r.text();
+        return res.status(200).json({ data: null, note: `Historical odds unavailable (HTTP ${r.status})`, detail: errDetail, remaining });
       }
       if (!r.ok) return res.status(r.status).json({ error: await r.text(), remaining });
 
