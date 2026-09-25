@@ -17,7 +17,7 @@ class SportsResearchApp {
     this.state = {
       selectedSport: 'nfl',
       selectedGameId: null,
-      nflWeek: 3,
+      nflWeek: 0,  // 0 = current week auto-detected from ESPN scoreboard
       mlbDateOffset: 0,
       nhlDateOffset: 0,
       nbaDateOffset: 0,
@@ -589,29 +589,23 @@ class SportsResearchApp {
         ${propLineHtml}
 
         <div class="pr-log-block">
-          <div class="pr-log-title">
-            <span>LAST 3</span>
-            <span class="pr-log-count">${Math.min(games.length, 3)} of 3 completed</span>
+          <div class="pr-log-tabs" role="tablist">
+            <button class="pr-log-tab active" data-tab="last3" role="tab" aria-selected="true">LAST 3
+              <span class="pr-tab-count">${Math.min(games.length, 3)}</span>
+            </button>
+            ${games.length > 3 ? `<button class="pr-log-tab" data-tab="last5" role="tab" aria-selected="false">LAST 5
+              <span class="pr-tab-count">${Math.min(games.length, 5)}</span>
+            </button>` : ''}
+            ${games.length > 5 ? `<button class="pr-log-tab" data-tab="last10" role="tab" aria-selected="false">LAST 10
+              <span class="pr-tab-count">${Math.min(games.length, 10)}</span>
+            </button>` : ''}
           </div>
-          ${last3Rows}
-
-          ${last5Rows ? `
-            <div class="pr-log-title" style="margin-top: 10px;">
-              <span>LAST 5</span>
-              <span class="pr-log-count">${Math.min(games.length, 5)} of 5 completed</span>
-            </div>
-            ${last5Rows}
-          ` : ''}
-
-          ${last10Rows ? `
-            <div class="pr-log-title" style="margin-top: 10px;">
-              <span>LAST 10</span>
-              <span class="pr-log-count">${Math.min(games.length, 10)} of 10 completed</span>
-            </div>
-            ${last10Rows}
-          ` : ''}
+          <div class="pr-log-panel active" data-panel="last3">${last3Rows}</div>
+          ${last5Rows ? `<div class="pr-log-panel" data-panel="last5">${last5Rows}</div>` : ''}
+          ${last10Rows ? `<div class="pr-log-panel" data-panel="last10">${last10Rows}</div>` : ''}
         </div>
       </div>`;
+
     };
 
     // ─── Render a team's player cards ─────────────────────────────────────
@@ -1029,7 +1023,8 @@ class SportsResearchApp {
 
     const options = {};
     if (this.state.selectedSport === 'nfl') {
-      options.week = this.state.nflWeek;
+      if (this.state.nflWeek > 0) options.week = this.state.nflWeek;
+      // nflWeek 0 = current week — no week param → ESPN scoreboard auto-returns current week
     } else if (this.state.selectedSport === 'mlb') {
       options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
     } else if (this.state.selectedSport === 'nhl') {
@@ -1114,11 +1109,17 @@ class SportsResearchApp {
     const awayRank = game.awayTeam.rank ? `<span class="cfb-rank-badge">#${game.awayTeam.rank}</span>` : '';
     const homeRank = game.homeTeam.rank ? `<span class="cfb-rank-badge">#${game.homeTeam.rank}</span>` : '';
 
+    const isLiveGame = game.gameStatus === 'LIVE';
+    const statusPill = isLiveGame
+      ? `<span class="game-status-live">🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}</span>`
+      : '';
+
     return `
-      <div class="game-card" data-game-id="${game.id}">
+      <div class="game-card${isLiveGame ? ' game-card-live' : ''}" data-game-id="${game.id}">
 
         <!-- Col 1: Date + Time -->
         <div class="game-col-datetime">
+          ${statusPill}
           <div class="game-date-str">${game.date}</div>
           <div class="game-time-str">${game.startTime}</div>
         </div>
@@ -1162,6 +1163,7 @@ class SportsResearchApp {
     `;
   }
 
+
   // Dedicated UFC fight card
   renderUFCFightCard(game) {
     const sl = game.summaryLines;
@@ -1191,11 +1193,17 @@ class SportsResearchApp {
       }
     }
 
+    const isUFCLive = game.gameStatus === 'LIVE';
+    const ufcStatusPill = isUFCLive
+      ? `<span class="game-status-live">🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}</span>`
+      : '';
+
     return `
-      <div class="ufc-fight-card" data-game-id="${game.id}">
+      <div class="ufc-fight-card${isUFCLive ? ' game-card-live' : ''}" data-game-id="${game.id}">
 
         <!-- UFC Event Header -->
         <div class="ufc-fight-header">
+          ${ufcStatusPill}
           <span class="ufc-event-label">🥊 ${eventLabel}</span>
           <span class="ufc-fight-datetime">${game.date} · ${game.startTime}</span>
         </div>
