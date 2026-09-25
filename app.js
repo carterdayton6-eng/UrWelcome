@@ -407,13 +407,13 @@ class SportsResearchApp {
         if (!liveSlot) continue;
 
         if (!histProps) {
-          liveSlot.innerHTML = '<span class="pr-hist-unavail" title="Historical line not available from Odds API">—</span>';
+          liveSlot.innerHTML = '<span class="pr-hist-unavail">Historical line unavailable</span>';
           continue;
         }
 
         const propEntry = oddsApiService.lookupPlayerProp(histProps, player.playerName, marketKey);
         if (!propEntry || propEntry.line === null) {
-          liveSlot.innerHTML = '<span class="pr-hist-unavail" title="Player prop not found in historical data">—</span>';
+          liveSlot.innerHTML = '<span class="pr-hist-unavail">Historical line unavailable</span>';
           continue;
         }
 
@@ -508,14 +508,22 @@ class SportsResearchApp {
       const propLabel  = PROP_LABEL[player.statGroup] || 'Prop';
 
       // ── Current prop line from Odds API (if available) ──────────────────
+      const isCompleted = (game.headline && game.headline.toLowerCase().includes('final')) ||
+                          (game.status && String(game.status).includes('FINAL'));
+
       let propLineHtml = '';
-      if (typeof oddsApiService !== 'undefined' && currentProps) {
+      if (isCompleted) {
+        propLineHtml = `<div class="pr-prop-line">
+          <span class="pr-prop-label">${propLabel}</span>
+          <span class="pr-prop-val">Game Final<span class="pr-prop-why"> — current prop markets closed</span></span>
+        </div>`;
+      } else if (typeof oddsApiService !== 'undefined' && currentProps) {
         const primaryMarket = oddsApiService.getPrimaryMarket(player.statGroup);
         if (primaryMarket) {
           const propData = oddsApiService.lookupPlayerProp(currentProps, player.playerName, primaryMarket);
           const formatted = propData ? oddsApiService.formatPropLine(propData) : null;
           if (formatted) {
-            // Show current line + up to 2 bookmakers
+            // Show current line + up to 3 bookmakers
             const bmLines = (formatted.bookmakers || []).slice(0, 3).map(bm =>
               `<span class="pr-bm-line"><span class="pr-bm-name">${bm.name}</span><span class="pr-bm-num">${bm.line ?? formatted.line}</span><span class="pr-bm-odds">${bm.overOdds ? 'O ' + (bm.overOdds >= 0 ? '+' + bm.overOdds : bm.overOdds) : ''} / ${bm.underOdds ? 'U ' + (bm.underOdds >= 0 ? '+' + bm.underOdds : bm.underOdds) : ''}</span></span>`
             ).join('');
@@ -526,9 +534,11 @@ class SportsResearchApp {
           } else {
             propLineHtml = `<div class="pr-prop-line"><span class="pr-prop-label">${propLabel}</span><span class="pr-prop-val">Line unavailable</span></div>`;
           }
+        } else {
+          propLineHtml = `<div class="pr-prop-line"><span class="pr-prop-label">${propLabel}</span><span class="pr-prop-val">Line unavailable</span></div>`;
         }
       } else {
-        propLineHtml = `<div class="pr-prop-line"><span class="pr-prop-label">${propLabel}</span><span class="pr-prop-val">Loading…<span class="pr-prop-why"> — checking Odds API</span></span></div>`;
+        propLineHtml = `<div class="pr-prop-line"><span class="pr-prop-label">${propLabel}</span><span class="pr-prop-val">Line unavailable</span></div>`;
       }
 
       // ── Game log rows — ESPN actual stats + historical prop placeholder ──
@@ -539,7 +549,7 @@ class SportsResearchApp {
         ? oddsApiService.getPrimaryMarket(player.statGroup)
         : null;
 
-      const logRows = games.map((g, idx) => {
+      const renderGameRow = (g, idx) => {
         const chips = dispKeys.map(([k, label]) => {
           const val = g.stats?.[k];
           if (val === undefined || val === null || val === '' || val === '--') return '';
@@ -548,8 +558,6 @@ class SportsResearchApp {
 
         const oppLabel = g.opponentAbbr || (g.opponentName || 'OPP').substring(0, 3).toUpperCase();
         const atVs = g.homeAway === 'away' ? '@' : 'vs';
-
-        // Historical prop slot — will be populated by loadHistoricalProps()
         const histId = `pr-hist-${player.playerId}-${g.eventId}`;
 
         return `<div class="pr-log-row${idx === 0 ? ' pr-log-last' : ''}">
@@ -559,15 +567,15 @@ class SportsResearchApp {
           </span>
           <span class="pr-log-chips">${chips || '<span class="pr-chip-none">—</span>'}</span>
           <span class="pr-hist-slot" id="${histId}" data-actual="${g.stats?.[primaryEspnKey] ?? ''}" data-market="${primaryMarket || ''}">
-            <span class="pr-hist-dot" title="Historical line loading…">◌</span>
+            <span class="pr-hist-unavail">Historical line unavailable</span>
           </span>
           ${idx === 0 ? '<span class="pr-last-tag">LAST</span>' : ''}
         </div>`;
-      }).join('');
+      };
 
-      const gamesLabel = games.length < 3
-        ? `${games.length} game${games.length !== 1 ? 's' : ''} this season`
-        : `Last ${games.length}`;
+      const last3Rows = games.slice(0, 3).map((g, idx) => renderGameRow(g, idx)).join('');
+      const last5Rows = games.length > 3 ? games.slice(3, 5).map((g, idx) => renderGameRow(g, idx + 3)).join('') : '';
+      const last10Rows = games.length > 5 ? games.slice(5, 10).map((g, idx) => renderGameRow(g, idx + 5)).join('') : '';
 
       return `<div class="pr-card" data-player-id="${player.playerId}" data-stat-group="${player.statGroup}">
         <div class="pr-card-top">
@@ -582,10 +590,26 @@ class SportsResearchApp {
 
         <div class="pr-log-block">
           <div class="pr-log-title">
-            <span>GAME LOG</span>
-            <span class="pr-log-count">${gamesLabel} · most recent first</span>
+            <span>LAST 3</span>
+            <span class="pr-log-count">${Math.min(games.length, 3)} of 3 completed</span>
           </div>
-          ${logRows}
+          ${last3Rows}
+
+          ${last5Rows ? `
+            <div class="pr-log-title" style="margin-top: 10px;">
+              <span>LAST 5</span>
+              <span class="pr-log-count">${Math.min(games.length, 5)} of 5 completed</span>
+            </div>
+            ${last5Rows}
+          ` : ''}
+
+          ${last10Rows ? `
+            <div class="pr-log-title" style="margin-top: 10px;">
+              <span>LAST 10</span>
+              <span class="pr-log-count">${Math.min(games.length, 10)} of 10 completed</span>
+            </div>
+            ${last10Rows}
+          ` : ''}
         </div>
       </div>`;
     };
@@ -633,16 +657,12 @@ class SportsResearchApp {
     return `<section class="pr-section">
       <div class="pr-section-header">
         <span class="pr-section-title">PLAYER RESEARCH</span>
-        <span class="pr-section-source">ESPN Boxscore · Verified · No fabricated data</span>
+        <span class="pr-section-source">ESPN Boxscore &amp; The Odds API · Verified</span>
       </div>
-      <p class="pr-section-sub">Actual game-by-game stats from completed ESPN boxscores · Prop lines require a sportsbook API · No hit rates until historical lines are available</p>
+      <p class="pr-section-sub">Actual player statistics from completed ESPN boxscores · Current sportsbook lines from The Odds API · Historical lines &amp; Over/Under results displayed only when verified</p>
       ${awaySec}
       ${homeSec}
-    </section>
-    <div class="di-prop-lines-notice">
-      <span>📋</span>
-      <span>Prop O/U lines and odds are not displayed here because they require a licensed sportsbook API. Stats shown are raw ESPN boxscore results only.</span>
-    </div>`;
+    </section>`;
   }
 
   _friendlyStatKey(key) {
@@ -1281,7 +1301,7 @@ class SportsResearchApp {
       </div>
 
       <!-- ── PLAYER STATS — Real ESPN data or honest unavailable notice ── -->
-      \${this._renderResearchStats(researchData, game, currentProps)}
+      ${this._renderResearchStats(researchData, game, currentProps)}
     `;
 
     document.getElementById('back-to-games-btn').addEventListener('click', () => {
