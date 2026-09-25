@@ -315,7 +315,7 @@ class SportsResearchApp {
 
   async renderUpcomingGamesForTeam(sport, teamName) {
     const options = {};
-    if (sport === 'nfl') options.week = this.state.nflWeek;
+    if (sport === 'nfl' && this.state.nflWeek > 0) options.week = this.state.nflWeek;
     else if (sport === 'mlb') options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
     else if (sport === 'nhl') options.date = this.getDateParamForOffset(this.state.nhlDateOffset);
     else if (sport === 'nba') options.date = this.getDateParamForOffset(this.state.nbaDateOffset);
@@ -714,10 +714,9 @@ class SportsResearchApp {
       this.dom.liveDataBtn.title = 'Tap to refresh live data';
     }
 
-    // Silent auto-refresh every 15 minutes
-    setInterval(() => {
-      this.service.clearCache();
-    }, 15 * 60 * 1000);
+    // Silent auto-refresh every 5 minutes
+    // Uses doSilentRefresh which preserves scroll position and selected sport/game
+    setInterval(() => this.doSilentRefresh(), 5 * 60 * 1000);
 
     // Brand click returns to home
     this.dom.brandTitle.addEventListener('click', () => {
@@ -776,7 +775,7 @@ class SportsResearchApp {
 
     if (this.state.selectedSport === 'nfl') {
       const weeks = [
-        { label: 'Week 3 (Live)', val: 3 },
+        { label: 'Current Week', val: 0 },
         { label: 'Week 4', val: 4 },
         { label: 'Week 5', val: 5 },
         { label: 'Week 6', val: 6 },
@@ -935,8 +934,51 @@ class SportsResearchApp {
     this.renderUpcomingGames();
   }
 
+  // Silent background refresh — does not reset scroll, sport, or game state
+  async doSilentRefresh() {
+    if (this.state.selectedGameId) return; // don't refresh while in game detail view
+    try {
+      this.service.clearCache();
+      const sport = this.state.selectedSport;
+      const options = {};
+      if (sport === 'nfl' && this.state.nflWeek > 0) options.week = this.state.nflWeek;
+      else if (sport === 'mlb') options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
+      else if (sport === 'nhl') options.date = this.getDateParamForOffset(this.state.nhlDateOffset);
+      else if (sport === 'nba') options.date = this.getDateParamForOffset(this.state.nbaDateOffset);
+      else if (sport === 'cfb' && this.state.cfbWeek > 0) options.week = this.state.cfbWeek;
+
+      const games = await this.service.getUpcomingGames(sport, '', options);
+      if (!games || !games.length) return;
+
+      // Remember scroll position
+      const scrollY = window.scrollY;
+
+      // Re-render game cards in place (no skeleton loader)
+      const newHtml = games.map(g =>
+        g.sport === 'ufc' ? this.renderUFCFightCard(g) : this.renderGameCard(g)
+      ).join('');
+
+      if (this.dom.gamesList && newHtml) {
+        this.dom.gamesList.innerHTML = newHtml;
+        this.bindCardClicks(this.dom.gamesList);
+      }
+
+      // Update timestamp
+      if (this.dom.lastUpdatedText) {
+        const now = new Date();
+        this.dom.lastUpdatedText.textContent = `Live Feed Connected · ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      }
+
+      // Restore scroll position (no jump)
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+    } catch (err) {
+      console.warn('[SilentRefresh] Failed:', err);
+    }
+  }
+
 
   async doRefresh() {
+
     const btn = this.dom.liveDataBtn;
     const label = this.dom.liveDataLabel;
     const dot = this.dom.liveDot;
@@ -1019,10 +1061,11 @@ class SportsResearchApp {
     }
 
     if (!games || games.length === 0) {
+      const sportName = this.state.selectedSport.toUpperCase();
       this.dom.gamesList.innerHTML = `
         <div class="empty-state">
-          <div class="empty-title">No games scheduled</div>
-          <p>No upcoming games found for this slate.</p>
+          <div class="empty-title">No Upcoming ${sportName} Games</div>
+          <p>All games on this slate have concluded, or no games are scheduled yet. Try a different week or check back when the next slate is released.</p>
         </div>
       `;
       return;
@@ -1307,6 +1350,10 @@ class SportsResearchApp {
     document.getElementById('back-to-games-btn').addEventListener('click', () => {
       this.goBackToGames();
     });
+
+    // Activate tab-switching for LAST 3 / 5 / 10 tab buttons in research cards
+    const researchSection = this.dom.gameDetailContainer.querySelector('.pr-section');
+    if (researchSection) this.bindLogTabs(researchSection);
 
     // Load historical prop lines in background (lazy, cached)
     // Updates each game-log row's historical slot once data arrives

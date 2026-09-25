@@ -3650,3 +3650,121 @@ body {
   .pr-hist-line { font-size: 0.56rem; }
   .pr-result-badge { font-size: 0.5rem; padding: 1px 4px; }
 }
+
+
+/* ── Game card: LIVE status pill ─────────────────────────────────────────── */
+.game-status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 99px;
+  margin-bottom: 4px;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.game-card-live {
+  border-left: 3px solid #ef4444;
+}
+
+/* ── LAST 3 / 5 / 10 tab buttons ─────────────────────────────────────────── */
+.pr-log-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.pr-log-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pr-log-tab:hover {
+  background: #273449;
+  color: #cbd5e1;
+}
+
+.pr-log-tab.active {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.pr-tab-count {
+  background: rgba(255,255,255,0.15);
+  color: inherit;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* ── Log panels: only active panel visible ────────────────────────────────── */
+.pr-log-panel {
+  display: none;
+}
+
+.pr-log-panel.active {
+  display: block;
+}
+
+/* ── Player research card: larger typography ─────────────────────────────── */
+.pr-player-name {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  color: #f1f5f9 !important;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.pr-group-badge {
+  font-size: 11px;
+  font-weight: 600;
+  background: #1e3a5f;
+  color: #60a5fa;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-top: 2px;
+  display: inline-block;
+}
+
+/* ── Mobile-first responsive stacking ────────────────────────────────────── */
+@media (max-width: 480px) {
+  .pr-cards-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .pr-card {
+    padding: 14px !important;
+  }
+
+  .pr-player-name {
+    font-size: 16px !important;
+  }
+}

@@ -296,7 +296,8 @@ export class LiveDataService {
       playerProps: {}
     };
     this.cacheTTL = 5 * 60 * 1000; // 5 minutes cache
-    this.currentNFLWeek = 3;
+    // currentNFLWeek: dynamically determined from ESPN after first fetch
+    this.currentNFLWeek = 0; // 0 = let ESPN scoreboard auto-detect current week (no ?week= param)
     this.totalNFLWeeks = 18;
   }
 
@@ -331,7 +332,10 @@ export class LiveDataService {
     let url = '';
     if (sport === 'nfl') {
       const week = options.week || this.currentNFLWeek;
-      url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2`;
+      // If week is 0 or not specified, omit week param → ESPN returns current week automatically
+      url = week > 0
+        ? `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2`
+        : `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2`;
     } else if (sport === 'mlb') {
       const dateParam = options.date ? `?dates=${options.date}` : '';
       url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard${dateParam}`;
@@ -392,12 +396,31 @@ export class LiveDataService {
         });
       }
 
-      const allParsed = events.map(ev => this.parseEventToGame(ev, sport));
+      // Filter out completed (STATUS_FINAL) events — show only UPCOMING and IN_PROGRESS
+      // Games tagged LIVE (IN_PROGRESS) are always included
+      const activeEvents = events.filter(ev => {
+        const st = ev.status && ev.status.type;
+        if (!st) return true; // keep if status unknown
+        // Exclude only fully completed events
+        if (st.completed === true) return false;
+        if (st.name === 'STATUS_FINAL' || st.name === 'STATUS_FULL_TIME' ||
+            st.name === 'STATUS_END_PERIOD' && st.completed) return false;
+        return true;
+      });
+
+      const allParsed = activeEvents.map(ev => this.parseEventToGame(ev, sport));
       // DATA VALIDATION: filter out any games where home === away (data artifact)
       const parsedGames = allParsed.filter(g => !g._invalid);
       if (allParsed.length !== parsedGames.length) {
         console.warn(`[LiveService] Filtered out ${allParsed.length - parsedGames.length} invalid matchups for ${sport}`);
       }
+
+      // Sort games chronologically by start time (soonest first)
+      parsedGames.sort((a, b) => {
+        const ta = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+        const tb = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+        return ta - tb;
+      });
 
       this.cache.games[cacheKey] = {
         timestamp: Date.now(),
@@ -565,6 +588,17 @@ export class LiveDataService {
       : { spread: spreadText, total: overUnder || 'O/U TBD', ml: mlText };
 
 
+    // Determine game lifecycle status
+    const evStatus = ev.status && ev.status.type;
+    const isLiveNow = evStatus && (
+      evStatus.name === 'STATUS_IN_PROGRESS' ||
+      evStatus.name === 'STATUS_HALFTIME' ||
+      evStatus.name === 'STATUS_END_PERIOD' ||
+      (evStatus.state && evStatus.state === 'in')
+    );
+    const gameStatus = isLiveNow ? 'LIVE' : 'UPCOMING';
+    const gameStatusDetail = evStatus ? (evStatus.shortDetail || evStatus.detail || '') : '';
+
     return {
       id: `live-${sport}-${ev.id}`,
       rawEventId: ev.id,
@@ -579,6 +613,8 @@ export class LiveDataService {
       headline: isUFC
         ? (ev._ufcEventName || ev.name || 'UFC Fight Night')
         : (ev.status && ev.status.type ? ev.status.type.description || ev.status.type.detail : 'Scheduled'),
+      gameStatus,
+      gameStatusDetail,
       weightClass,
       summaryLines,
       rawOdds: oddsObj,
