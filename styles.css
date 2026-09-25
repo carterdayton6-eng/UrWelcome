@@ -4752,7 +4752,7 @@ body {
 
 .game-lines-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -4764,15 +4764,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .line-rec-top {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
-.line-rec-emoji { font-size: 13px; }
+.line-rec-emoji { font-size: 13px; flex-shrink: 0; }
 
 .line-rec-subject {
   font-size: 13px;
@@ -4782,12 +4784,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
 }
 
 .line-rec-book {
   font-size: 9px;
   color: #38bdf8;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .line-rec-bottom {
@@ -4796,11 +4800,13 @@ body {
   align-items: baseline;
   padding-top: 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 0;
 }
 
 .line-rec-metric {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .metric-label {
@@ -4814,13 +4820,189 @@ body {
   font-size: 13px;
   font-weight: 800;
   color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metric-val.odds {
   color: #4ade80;
 }
 
-/* ── 4. Player Props Section ─────────────────────────────────────────────── */
+/* ── Compact Last 5 Matchups / UFC Previous Fight Dropdown ──────────────── */
+details.h2h-dropdown-container {
+  margin-top: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+details.h2h-dropdown-container summary {
+  list-style: none;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+details.h2h-dropdown-container summary::-webkit-details-marker {
+  display: none;
+}
+
+.h2h-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid #334155;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.h2h-toggle-btn:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+details[open] .h2h-toggle-btn {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+details[open] .h2h-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.h2h-toggle-icon {
+  font-size: 9px;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.h2h-dropdown-content {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-top: none;
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+.h2h-matchup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.h2h-matchup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #f1f5f9;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.h2h-date {
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.h2h-separator {
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.h2h-score {
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h2h-empty {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+  text-align: center;
+  padding: 8px 6px;
+}
+
+/* UFC Previous Bout Card */
+.h2h-ufc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.h2h-ufc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding-bottom: 5px;
+}
+
+.h2h-ufc-event {
+  font-weight: 700;
+  color: #38bdf8;
+  font-size: 11px;
+}
+
+.h2h-ufc-date {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.h2h-ufc-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.h2h-winner-badge {
+  font-size: 9px;
+  font-weight: 800;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.h2h-winner-name {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.h2h-method-text {
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+/* ── 4. Player Props Section (2 x 8 Columns) ─────────────────────────────── */
 .player-props-section {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -4831,99 +5013,104 @@ body {
   box-sizing: border-box;
 }
 
-.player-props-grid {
+.player-props-columns-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.player-props-team-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.team-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.team-col-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: #f1f5f9;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.team-col-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.team-props-list {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.player-prop-card {
+.player-prop-rec-box {
   background: #141c2b;
   border: 1px solid #27364f;
   border-radius: var(--radius-sm);
   padding: 9px 10px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
-.player-prop-card:hover {
+.player-prop-rec-box:hover {
   background: #182338;
   border-color: #38bdf8;
 }
 
-.prop-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+.player-prop-rec-box.expanded {
+  border-color: #f5b920;
+  background: #151e2e;
 }
 
-.prop-identity {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.prop-sport-emoji { font-size: 13px; }
-
-.prop-player-name {
-  font-size: 13px;
-  font-weight: 800;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.prop-view-btn {
-  font-size: 9px;
-  font-weight: 800;
-  color: #f5b920;
-  background: rgba(245, 185, 32, 0.1);
-  border: 1px solid rgba(245, 185, 32, 0.3);
-  border-radius: 4px;
-  padding: 2px 5px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.prop-market-name {
-  font-size: 11px;
-  color: #38bdf8;
-  font-weight: 600;
-}
-
-.prop-card-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.prop-metric {
-  display: flex;
-  flex-direction: column;
-}
-
-.prop-metric-label {
-  font-size: 9px;
-  color: #94a3b8;
+.prop-expand-hint {
+  font-size: 10px;
   font-weight: 700;
+  color: #f5b920;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(245, 185, 32, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  user-select: none;
 }
 
-.prop-metric-val {
-  font-size: 13px;
-  font-weight: 800;
-  color: #f1f5f9;
-}
-
-.prop-metric-val.odds {
-  color: #4ade80;
+.empty-col-note {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+  padding: 14px 8px;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
 }
 
 /* ── 5. Player Research: LAST 10 ONLY Header & Panel ─────────────────────── */
@@ -5082,23 +5269,24 @@ body {
   margin-top: 2px;
 }
 
-.player-prop-card.expanded {
+.player-prop-rec-box.expanded {
   border-color: #f5b920 !important;
   background: #152033 !important;
 }
 
-.player-prop-card.expanded .prop-tap-hint {
+.player-prop-rec-box.expanded .prop-expand-hint {
   color: #94a3b8 !important;
   border-top-color: rgba(148, 163, 184, 0.2) !important;
 }
 
 .prop-expanded-research {
   margin-top: 8px;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid rgba(245, 185, 32, 0.35);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .prop-research-summary-bar {
@@ -5106,17 +5294,17 @@ body {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 
 .prs-hit-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-weight: 800;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .prs-hit-badge.high {
@@ -5138,7 +5326,7 @@ body {
 }
 
 .prs-subtext {
-  font-size: 10px;
+  font-size: 9px;
   color: #94a3b8;
   font-weight: 600;
 }
@@ -5146,30 +5334,33 @@ body {
 .prop-last10-table {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   background: #0d1422;
   border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 6px 8px;
+  border-radius: 4px;
+  padding: 4px 6px;
+  min-width: 0;
 }
 
 .last10-row {
   display: grid;
-  grid-template-columns: 75px 65px 1fr 50px;
+  grid-template-columns: 46px 42px 1fr 20px;
   align-items: center;
-  font-size: 11px;
+  font-size: 10px;
   color: #cbd5e1;
-  padding: 4px 0;
+  padding: 3px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  gap: 2px;
+  min-width: 0;
 }
 
 .last10-row.header {
   font-size: 9px;
   font-weight: 800;
   color: #64748b;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   border-bottom: 1px solid #334155;
-  padding-bottom: 3px;
+  padding-bottom: 2px;
 }
 
 .last10-row:last-child {
@@ -5180,15 +5371,24 @@ body {
   font-weight: 600;
   color: #94a3b8;
   white-space: nowrap;
+  font-size: 9px;
 }
 
 .l10-opp {
   font-weight: 700;
   color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9px;
 }
 
 .l10-stat {
   color: #e2e8f0;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .l10-stat strong {
@@ -5199,7 +5399,7 @@ body {
 .l10-result {
   text-align: right;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .l10-result.hit {
@@ -5214,6 +5414,14 @@ body {
   color: #fbbf24;
 }
 
+.last10-empty {
+  font-size: 10px;
+  color: #64748b;
+  font-style: italic;
+  text-align: center;
+  padding: 6px;
+}
+
 .empty-props-box {
   padding: 16px;
   text-align: center;
@@ -5226,7 +5434,39 @@ body {
 }
 
 @media (max-width: 480px) {
-  .player-props-grid {
-    grid-template-columns: 1fr !important;
+  .game-lines-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  .player-props-columns-container {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  .player-props-team-col {
+    min-width: 0 !important;
+  }
+
+  .player-prop-rec-box {
+    padding: 7px 7px !important;
+    min-width: 0 !important;
+  }
+
+  .line-rec-subject {
+    font-size: 11px !important;
+  }
+
+  .metric-val {
+    font-size: 11px !important;
+  }
+
+  .prop-expand-hint {
+    font-size: 9px !important;
+  }
+
+  .h2h-matchup-row {
+    font-size: 10px !important;
+    padding: 4px 6px !important;
   }
 }

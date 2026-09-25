@@ -1713,18 +1713,21 @@ export class PlayerGameLogService {
 
     completed.push(...parseCompletedEvents(events));
 
-    // If fewer than limit games completed in current season, query previous season
+    // If fewer than limit games completed in current season, query previous seasons (up to 3 years back)
     const seasonYear = data.season?.year || (new Date()).getFullYear();
-    if (completed.length < limit && seasonYear) {
+    let queryYear = seasonYear;
+    while (completed.length < limit && queryYear > seasonYear - 3) {
+      queryYear--;
       try {
-        const prevUrl = `${url}?season=${seasonYear - 1}`;
+        const prevUrl = `${url}?season=${queryYear}`;
         const prevData = await this._fetch(prevUrl);
         if (prevData && prevData.events) {
           const prevCompleted = parseCompletedEvents(prevData.events);
           completed.push(...prevCompleted);
         }
       } catch (err) {
-        console.warn(`[PlayerGameLogService] previous season schedule fetch failed:`, err.message);
+        console.warn(`[PlayerGameLogService] previous season (${queryYear}) schedule fetch failed:`, err.message);
+        break;
       }
     }
 
@@ -1828,12 +1831,15 @@ export class PlayerGameLogService {
     return 0;
   }
 
-  _formatDate(d) {
+  _formatDate(d, includeYear = false) {
     if (!d) return '';
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const currentYear = (new Date()).getFullYear();
-    const gameYear = d.getFullYear ? d.getFullYear() : null;
-    if (gameYear && gameYear < currentYear) {
+    const gameYear = d.getFullYear ? d.getFullYear() : currentYear;
+    if (includeYear) {
+      return `${months[d.getMonth()]} ${d.getDate()}, ${gameYear}`;
+    }
+    if (gameYear < currentYear) {
       return `${months[d.getMonth()]} ${d.getDate()} '${String(gameYear).slice(2)}`;
     }
     return `${months[d.getMonth()]} ${d.getDate()}`;
@@ -2031,6 +2037,187 @@ export class PlayerGameLogService {
     }
 
     return { players: Object.values(playerMap), error: null };
+  }
+
+  // ─── Team Head-to-Head History (Last 5 completed meetings between EXACT two teams) ─
+  async getTeamHeadToHead(sport, teamAId, teamBId, teamAName, teamBName, limit = 5) {
+    if (!sport || !teamAId || !teamBId) return [];
+    if (sport === 'ufc') {
+      return this.getUfcHeadToHead(teamAId, teamBId, teamAName, teamBName);
+    }
+    const cfg = this.sportConfig[sport];
+    if (!cfg) return [];
+
+    const cacheKey = `h2h_${sport}_${teamAId}_${teamBId}`;
+    const cached = this.gameLogCache[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < this.cacheTTL)) {
+      return cached.data;
+    }
+
+    const normA = (teamAName || '').toLowerCase().trim();
+    const normB = (teamBName || '').toLowerCase().trim();
+
+    const isMatchup = (oppId, oppName, oppAbbr) => {
+      if (oppId && String(oppId) === String(teamBId)) return true;
+      const n = (oppName || '').toLowerCase().trim();
+      const a = (oppAbbr || '').toLowerCase().trim();
+      if (normB && (n.includes(normB) || normB.includes(n))) return true;
+      if (a && normB && (normB.includes(a) || a.includes(normB))) return true;
+      return false;
+    };
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${cfg.sport}/${cfg.league}/teams/${teamAId}/schedule`;
+    const h2hMatches = [];
+    const seenEventIds = new Set();
+
+    const parseEvents = (evList) => {
+      for (const ev of evList) {
+        if (!ev || !ev.id || seenEventIds.has(ev.id)) continue;
+        const comp = (ev.competitions || [])[0];
+        if (!comp) continue;
+        const statusType = comp.status?.type;
+        const isFinal = statusType && (
+          statusType.name === 'STATUS_FINAL' ||
+          statusType.name === 'STATUS_FULL_TIME' ||
+          statusType.completed === true ||
+          (statusType.detail && statusType.detail.toLowerCase().includes('final'))
+        );
+        if (!isFinal) continue;
+
+        const comps = comp.competitors || [];
+        const myComp = comps.find(c => String(c.team?.id) === String(teamAId)) || comps[0];
+        const oppComp = comps.find(c => String(c.team?.id) !== String(teamAId)) || comps[1];
+
+        if (!oppComp || !myComp) continue;
+
+        const oppId = oppComp.team?.id;
+        const oppName = oppComp.team?.displayName || oppComp.team?.name || '';
+        const oppAbbr = oppComp.team?.abbreviation || '';
+
+        if (!isMatchup(oppId, oppName, oppAbbr)) continue;
+
+        const gameDate = ev.date ? new Date(ev.date) : null;
+        if (!gameDate || isNaN(gameDate.getTime())) continue;
+
+        const getScore = (c) => {
+          if (!c) return 0;
+          const v = c.score;
+          if (v === null || v === undefined) return 0;
+          if (typeof v === 'object') return parseInt(v.displayValue || v.value || 0, 10);
+          return parseInt(v, 10) || 0;
+        };
+
+        const isMyHome = myComp.homeAway === 'home' || oppComp.homeAway === 'away';
+        const awayComp = isMyHome ? oppComp : myComp;
+        const homeComp = isMyHome ? myComp : oppComp;
+        const awayName = awayComp.team?.displayName || awayComp.team?.name || 'Away';
+        const homeName = homeComp.team?.displayName || homeComp.team?.name || 'Home';
+        const awayScore = getScore(awayComp);
+        const homeScore = getScore(homeComp);
+        const scoreDisplay = `${awayName} ${awayScore} @ ${homeName} ${homeScore}`;
+
+        seenEventIds.add(ev.id);
+        h2hMatches.push({
+          eventId: ev.id,
+          gameDate,
+          dateStr: this._formatDate(gameDate, true),
+          awayName,
+          homeName,
+          awayScore,
+          homeScore,
+          scoreDisplay,
+          homeAway: myComp.homeAway || 'unknown',
+        });
+      }
+    };
+
+    // 1. Current season
+    let seasonYear = (new Date()).getFullYear();
+    try {
+      const data = await this._fetch(url);
+      if (data) {
+        if (data.season?.year) seasonYear = data.season.year;
+        if (data.events) parseEvents(data.events);
+      }
+    } catch (err) {
+      console.warn(`[PlayerGameLogService] H2H current season fetch error:`, err.message);
+    }
+
+    // 2. Query previous seasons (up to 4 years back) if needed
+    let y = seasonYear;
+    while (h2hMatches.length < limit && y > seasonYear - 4) {
+      y--;
+      try {
+        const prevData = await this._fetch(`${url}?season=${y}`);
+        if (prevData && prevData.events) {
+          parseEvents(prevData.events);
+        }
+      } catch (err) {
+        break;
+      }
+    }
+
+    // Sort descending by date (most recent first)
+    h2hMatches.sort((a, b) => b.gameDate - a.gameDate);
+    const result = h2hMatches.slice(0, limit);
+
+    this.gameLogCache[cacheKey] = { timestamp: Date.now(), data: result };
+    return result;
+  }
+
+  // ─── UFC Previous Bout (Checks if 2 fighters have previously fought) ──────
+  async getUfcHeadToHead(fighterAId, fighterBId, fighterAName, fighterBName) {
+    if (!fighterAId && !fighterBId) return null;
+    const cacheKey = `ufc_h2h_${fighterAId}_${fighterBId}`;
+    const cached = this.gameLogCache[cacheKey];
+    if (cached !== undefined) return cached; // null is valid
+
+    const normA = (fighterAName || '').toLowerCase().trim();
+    const normB = (fighterBName || '').toLowerCase().trim();
+    const surnameB = normB.split(' ').pop();
+
+    try {
+      const athleteId = fighterAId && fighterAId !== 'home' && fighterAId !== 'away' ? fighterAId : null;
+      if (!athleteId) {
+        this.gameLogCache[cacheKey] = null;
+        return null;
+      }
+      const url = `https://site.api.espn.com/apis/common/v3/sports/mma/ufc/athletes/${athleteId}/overview`;
+      const data = await this._fetch(url);
+      if (!data) {
+        this.gameLogCache[cacheKey] = null;
+        return null;
+      }
+
+      // Check fights in athlete overview
+      const fights = data.fights || data.eventLog || [];
+      for (const f of fights) {
+        const opp = f.opponent || {};
+        const oppName = (opp.displayName || opp.name || '').toLowerCase();
+        const matchesOpp = (opp.id && String(opp.id) === String(fighterBId)) ||
+                           (normB && oppName.includes(normB)) ||
+                           (surnameB && oppName.includes(surnameB));
+
+        if (matchesOpp) {
+          const gameDate = f.date ? new Date(f.date) : null;
+          const result = {
+            date: gameDate ? this._formatDate(gameDate) : (f.date || 'Past Event'),
+            event: f.eventName || f.competitionName || 'UFC Event',
+            winner: f.result === 'win' ? (fighterAName || 'Fighter A') : (fighterBName || 'Fighter B'),
+            loser: f.result === 'win' ? (fighterBName || 'Fighter B') : (fighterAName || 'Fighter A'),
+            method: f.decision || f.method || f.resultText || 'Decision',
+            roundTime: f.round ? `Round ${f.round}${f.time ? ', ' + f.time : ''}` : '',
+          };
+          this.gameLogCache[cacheKey] = result;
+          return result;
+        }
+      }
+    } catch (err) {
+      console.warn(`[PlayerGameLogService] UFC previous fight check error:`, err.message);
+    }
+
+    this.gameLogCache[cacheKey] = null;
+    return null;
   }
 }
 
