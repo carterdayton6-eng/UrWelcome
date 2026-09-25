@@ -9,6 +9,7 @@ const SPORT_MAP = {
   nba:   'basketball_nba',
   nhl:   'icehockey_nhl',
   ncaaf: 'americanfootball_ncaaf',
+  cfb:   'americanfootball_ncaaf',
   ufc:   'mma_mixed_martial_arts',
 };
 
@@ -19,6 +20,7 @@ const DEFAULT_MARKETS = {
   nba:   'player_points,player_rebounds,player_assists,player_threes',
   nhl:   'player_shots_on_goal,player_goals,player_points,player_assists',
   ncaaf: 'player_pass_yds,player_pass_tds,player_rush_yds,player_reception_yds',
+  cfb:   'player_pass_yds,player_pass_tds,player_rush_yds,player_reception_yds',
   ufc:   '', // UFC props not reliably available
 };
 

@@ -17,6 +17,7 @@ const SPORT_MAP = {
   nba:   'basketball_nba',
   nhl:   'icehockey_nhl',
   ncaaf: 'americanfootball_ncaaf',
+  cfb:   'americanfootball_ncaaf',
   ufc:   'mma_mixed_martial_arts',
 };
 
@@ -27,6 +28,7 @@ const DEFAULT_MARKETS = {
   nba:   'player_points,player_rebounds,player_assists',
   nhl:   'player_shots_on_goal,player_goals,player_points',
   ncaaf: 'player_pass_yds,player_rush_yds',
+  cfb:   'player_pass_yds,player_rush_yds',
   ufc:   '',
 };
 
@@ -39,13 +41,14 @@ export default async function handler(req, res) {
   if (!oddsKey) return res.status(400).json({ error: `Unsupported sport: ${sport}` });
   if (!date)    return res.status(400).json({ error: 'date parameter required (ISO 8601, e.g. 2026-09-20T12:00:00Z)' });
 
+  const cleanDate = date.replace(/\.\d+Z$/, 'Z');
   const marketsToUse = markets || DEFAULT_MARKETS[sport] || '';
 
   try {
     if (mode === 'events') {
       // Step 1: list events active at this historical timestamp
       // Used to find the Odds API event ID for an ESPN completed game
-      const params = new URLSearchParams({ apiKey: key, date, dateFormat: 'iso' });
+      const params = new URLSearchParams({ apiKey: key, date: cleanDate, dateFormat: 'iso' });
       const r = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${oddsKey}/events?${params}`);
       const remaining = r.headers.get('x-requests-remaining') || '?';
       if (!r.ok) return res.status(r.status).json({ error: await r.text(), remaining });
@@ -64,7 +67,7 @@ export default async function handler(req, res) {
       const params = new URLSearchParams({
         apiKey: key,
         regions: 'us',
-        date,
+        date: cleanDate,
         dateFormat: 'iso',
         markets: marketsToUse,
         oddsFormat: 'american',

@@ -77,6 +77,45 @@ export class OddsApiService {
       .trim();
   }
 
+  // ── Check if two team names match (handles abbreviations, mascots, cities) ──
+  _teamsMatch(nameA, nameB) {
+    if (!nameA || !nameB) return false;
+    const a = this._normalizeTeam(nameA);
+    const b = this._normalizeTeam(nameB);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+
+    // Check last word (mascot or fighter surname)
+    const wordsA = a.split(' ');
+    const wordsB = b.split(' ');
+    const lastA = wordsA[wordsA.length - 1];
+    const lastB = wordsB[wordsB.length - 1];
+    if (lastA && lastB && lastA.length > 2 && lastA === lastB) return true;
+
+    // Common city abbreviation aliases
+    const cityAliases = {
+      'la': 'los angeles',
+      'ny': 'new york',
+      'tb': 'tampa bay',
+      'sf': 'san francisco',
+      'gb': 'green bay',
+      'kc': 'kansas city',
+      'ne': 'new england',
+      'no': 'new orleans'
+    };
+    const expandAliases = s => {
+      let res = s;
+      for (const [abbr, full] of Object.entries(cityAliases)) {
+        res = res.replace(new RegExp(`^${abbr}\\b`), full);
+      }
+      return res;
+    };
+    if (expandAliases(a) === expandAliases(b)) return true;
+
+    return false;
+  }
+
   // ── Normalize player name for matching ────────────────────────────────────
   // Handles Jr., Sr., II, III, apostrophes, hyphens
   _normalizePlayer(name) {
@@ -128,7 +167,7 @@ export class OddsApiService {
   // ── Fetch Odds API event list and match an ESPN game ─────────────────────
   // Returns the Odds API event ID string, or null if not found
   async findOddsEventId(sport, espnGame) {
-    const espnId = espnGame?.rawEventId;
+    const espnId = espnGame?.rawEventId || espnGame?.id;
     if (!espnId) return null;
 
     const cached = this._eventMappingCache.get(espnId);
@@ -137,10 +176,11 @@ export class OddsApiService {
     const oddsPort = ODDS_SPORT_MAP[sport];
     if (!oddsPort) { this._eventMappingCache.set(espnId, null); return null; }
 
-    // Fetch events from ~1 week around the game date to cover scheduling variance
+    // Fetch events from ~2 days around the game date to cover scheduling variance
     const gameDate = espnGame.rawDate ? new Date(espnGame.rawDate) : new Date();
-    const from = new Date(gameDate.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
-    const to   = new Date(gameDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
+    // Strictly sanitize: The Odds API rejects milliseconds (.000Z)
+    const from = new Date(gameDate.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+    const to   = new Date(gameDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
 
     const result = await this._call('events', {
       sport: oddsPort,
@@ -153,26 +193,33 @@ export class OddsApiService {
       return null;
     }
 
-    // Match by normalized team names + date
-    const awayNorm = this._normalizeTeam(espnGame.awayTeam?.name);
-    const homeNorm = this._normalizeTeam(espnGame.homeTeam?.name);
+    // Match by flexible team matching + date
+    const awayName  = espnGame.awayTeam?.name || '';
+    const homeName  = espnGame.homeTeam?.name || '';
+    const awayShort = espnGame.awayTeam?.short || '';
+    const homeShort = espnGame.homeTeam?.short || '';
     const gameDateStr = gameDate.toISOString().split('T')[0];
 
     let matched = null;
     for (const ev of result.data) {
       const evDate = (ev.commence_time || '').split('T')[0];
-      const awayMatch = this._normalizeTeam(ev.away_team) === awayNorm;
-      const homeMatch = this._normalizeTeam(ev.home_team) === homeNorm;
+      const awayMatch = this._teamsMatch(ev.away_team, awayName) || this._teamsMatch(ev.away_team, awayShort);
+      const homeMatch = this._teamsMatch(ev.home_team, homeName) || this._teamsMatch(ev.home_team, homeShort);
+      // Also check swapped home/away (neutral sites, UFC)
+      const swappedMatch = (this._teamsMatch(ev.away_team, homeName) || this._teamsMatch(ev.away_team, homeShort)) &&
+                           (this._teamsMatch(ev.home_team, awayName) || this._teamsMatch(ev.home_team, awayShort));
+
+      const isTeamsMatch = (awayMatch && homeMatch) || swappedMatch;
       const dateMatch = evDate === gameDateStr;
 
-      if (awayMatch && homeMatch && dateMatch) {
+      if (isTeamsMatch && dateMatch) {
         matched = ev.id;
         break;
       }
-      // Fallback: same teams, date within 1 day (handles timezone drift)
-      if (awayMatch && homeMatch) {
+      // Fallback: same teams, date within 2 days (handles timezone drift)
+      if (isTeamsMatch) {
         const diff = Math.abs(new Date(evDate) - new Date(gameDateStr));
-        if (diff <= 86400000) { matched = ev.id; break; }
+        if (diff <= 2 * 86400000) { matched = ev.id; break; }
       }
     }
 
@@ -302,7 +349,7 @@ export class OddsApiService {
 
     const snapshotDate = new Date(gameDateObj);
     snapshotDate.setUTCHours(13, 0, 0, 0); // 1 PM UTC = 9 AM ET — before most games
-    const snapshotISO = snapshotDate.toISOString();
+    const snapshotISO = snapshotDate.toISOString().replace(/\.\d+Z$/, 'Z');
 
     // Step 1: find the Odds API event ID at this historical timestamp
     const eventsResult = await this._call('historical', {
@@ -317,18 +364,16 @@ export class OddsApiService {
     }
 
     // Match: find the event matching this ESPN completed game
-    const awayNorm = this._normalizeTeam(completedGame.opponentName); // opponent is "away" relative to team
-    const homeNorm = this._normalizeTeam(completedGame.teamName || '');
+    const oppName  = completedGame.opponentName || '';
+    const teamName = completedGame.teamName || '';
     const dateStr  = gameDateObj.toISOString().split('T')[0];
 
     let oddsEventId = null;
     for (const ev of (eventsResult.data.data || [])) {
       const evDate   = (ev.commence_time || '').split('T')[0];
-      const awayHist = this._normalizeTeam(ev.away_team);
-      const homeHist = this._normalizeTeam(ev.home_team);
       // Match either direction — away/home assignment depends on the game
-      const teamsMatch = (awayHist === awayNorm && homeHist === homeNorm) ||
-                         (awayHist === homeNorm && homeHist === awayNorm);
+      const teamsMatch = (this._teamsMatch(ev.away_team, oppName) && this._teamsMatch(ev.home_team, teamName)) ||
+                         (this._teamsMatch(ev.away_team, teamName) && this._teamsMatch(ev.home_team, oppName));
       const dateOk     = evDate === dateStr ||
                          Math.abs(new Date(evDate) - new Date(dateStr)) <= 86400000;
       if (teamsMatch && dateOk) { oddsEventId = ev.id; break; }

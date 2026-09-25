@@ -8,6 +8,7 @@ const SPORT_MAP = {
   nba:   'basketball_nba',
   nhl:   'icehockey_nhl',
   ncaaf: 'americanfootball_ncaaf',
+  cfb:   'americanfootball_ncaaf',
   ufc:   'mma_mixed_martial_arts',
 };
 
@@ -19,6 +20,9 @@ export default async function handler(req, res) {
   const oddsKey = SPORT_MAP[sport];
   if (!oddsKey) return res.status(400).json({ error: `Unsupported sport: ${sport}` });
 
+  const cleanFrom = commenceTimeFrom ? commenceTimeFrom.replace(/\.\d+Z$/, 'Z') : null;
+  const cleanTo   = commenceTimeTo   ? commenceTimeTo.replace(/\.\d+Z$/, 'Z')   : null;
+
   const params = new URLSearchParams({
     apiKey: key,
     regions: 'us',
@@ -26,11 +30,27 @@ export default async function handler(req, res) {
     oddsFormat: 'american',
     dateFormat: 'iso',
   });
-  if (commenceTimeFrom) params.set('commenceTimeFrom', commenceTimeFrom);
-  if (commenceTimeTo)   params.set('commenceTimeTo',   commenceTimeTo);
+  if (cleanFrom) params.set('commenceTimeFrom', cleanFrom);
+  if (cleanTo)   params.set('commenceTimeTo',   cleanTo);
 
   try {
-    const r = await fetch(`https://api.the-odds-api.com/v4/sports/${oddsKey}/odds?${params}`);
+    let r = await fetch(`https://api.the-odds-api.com/v4/sports/${oddsKey}/odds?${params}`);
+
+    // Fallback if date filtering fails
+    if (!r.ok && (cleanFrom || cleanTo)) {
+      const fallbackParams = new URLSearchParams({
+        apiKey: key,
+        regions: 'us',
+        markets: 'h2h,spreads,totals',
+        oddsFormat: 'american',
+        dateFormat: 'iso',
+      });
+      const rFallback = await fetch(`https://api.the-odds-api.com/v4/sports/${oddsKey}/odds?${fallbackParams}`);
+      if (rFallback.ok) {
+        r = rFallback;
+      }
+    }
+
     const remaining = r.headers.get('x-requests-remaining') || '?';
     const used      = r.headers.get('x-requests-used')      || '?';
     if (!r.ok) return res.status(r.status).json({ error: await r.text(), remaining });
