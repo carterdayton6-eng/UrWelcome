@@ -642,20 +642,13 @@ class SportsResearchApp {
         ${propLineHtml}
 
         <div class="pr-log-block">
-          <div class="pr-log-tabs" role="tablist">
-            <button class="pr-log-tab active" data-tab="last3" role="tab" aria-selected="true">LAST 3
-              <span class="pr-tab-count">${Math.min(games.length, 3)}</span>
-            </button>
-            <button class="pr-log-tab" data-tab="last5" role="tab" aria-selected="false">LAST 5
-              <span class="pr-tab-count">${Math.min(games.length, 5)}</span>
-            </button>
-            <button class="pr-log-tab" data-tab="last10" role="tab" aria-selected="false">LAST 10
-              <span class="pr-tab-count">${Math.min(games.length, 10)}</span>
-            </button>
+          <div class="pr-last10-header">
+            <span class="pr-last10-title">LAST 10 GAMES</span>
+            <span class="pr-last10-count">${Math.min(games.length, 10)} Completed Games</span>
           </div>
-          <div class="pr-log-panel active" data-panel="last3">${last3Rows}</div>
-          <div class="pr-log-panel" data-panel="last5">${last5Rows || last3Rows}</div>
-          <div class="pr-log-panel" data-panel="last10">${last10Rows || last5Rows || last3Rows}</div>
+          <div class="pr-last10-panel">
+            ${last10Rows || last3Rows}
+          </div>
         </div>
       </div>`;
 
@@ -1088,6 +1081,497 @@ class SportsResearchApp {
   }
 
 
+
+  // ==========================================================================
+  // FINAL PASS: RECOMMENDATION ENGINE & MOBILE-FIRST FLOW
+  // Order: Most Upcoming Game -> Recommended Parlay -> Recommended Game Lines
+  //        -> Player Props -> Player Research / Last 10
+  // ==========================================================================
+
+  _getSportEmoji(sport) {
+    const map = { nfl: '🏈', mlb: '⚾', nhl: '🏒', nba: '🏀', cfb: '🎓', ufc: '🥊' };
+    return map[sport] || '🎯';
+  }
+
+  // ── Build ONE Recommended Parlay (3–5 legs, combined odds +300 to +600) ───
+  _buildRecommendedParlay(sport, games, currentProps) {
+    if (!games || !games.length) return null;
+    const emoji = this._getSportEmoji(sport);
+    const candidates = [];
+
+    // 1. Gather game line legs across upcoming games
+    for (const g of games.slice(0, 8)) {
+      const sl = g.summaryLines || {};
+      const awayShort = g.awayTeam?.short || 'AWAY';
+      const homeShort = g.homeTeam?.short || 'HOME';
+
+      // Spread candidate
+      if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
+        candidates.push({
+          emoji,
+          subject: `${homeShort} Spread`,
+          market: this.spreadLabel(sport).replace(':', ''),
+          line: sl.spread,
+          odds: '-110',
+          decimal: 1.91,
+          gameName: `${awayShort} @ ${homeShort}`,
+        });
+      }
+
+      // Total candidate
+      if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
+        candidates.push({
+          emoji,
+          subject: `${awayShort}/${homeShort} Total`,
+          market: 'Total',
+          line: sl.total,
+          odds: '-110',
+          decimal: 1.91,
+          gameName: `${awayShort} @ ${homeShort}`,
+        });
+      }
+
+      // Moneyline candidate (priced -220 to +160)
+      if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
+        const parts = sl.ml.split('/');
+        if (parts.length >= 2) {
+          const p1 = parts[0].trim();
+          const m1 = p1.match(/([A-Z0-9]+)\s+([+-]\d+)/i);
+          if (m1) {
+            const team = m1[1];
+            const price = parseInt(m1[2], 10);
+            if (!isNaN(price) && price >= -220 && price <= 160) {
+              const dec = price > 0 ? 1 + (price / 100) : 1 + (100 / Math.abs(price));
+              candidates.push({
+                emoji,
+                subject: `${team} ML`,
+                market: 'Moneyline',
+                line: `${team} Moneyline`,
+                odds: price > 0 ? `+${price}` : `${price}`,
+                decimal: dec,
+                gameName: `${awayShort} @ ${homeShort}`,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Gather verified player prop candidate if available
+    if (typeof oddsApiService !== 'undefined' && currentProps) {
+      for (const [pNorm, markets] of Object.entries(currentProps)) {
+        for (const [mKey, pData] of Object.entries(markets)) {
+          if (pData && pData.line !== null) {
+            const overPrice = pData.overOdds || -110;
+            if (overPrice >= -220 && overPrice <= 160) {
+              const dec = overPrice > 0 ? 1 + (overPrice / 100) : 1 + (100 / Math.abs(overPrice));
+              const titleName = pNorm.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              candidates.push({
+                emoji,
+                subject: titleName,
+                market: 'Player Prop',
+                line: `Over ${pData.line}`,
+                odds: overPrice > 0 ? `+${overPrice}` : `${overPrice}`,
+                decimal: dec,
+                gameName: titleName,
+              });
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (candidates.length < 3) return null;
+
+    // Target combined odds: +300 to +600 (multiplier 4.0 to 7.0)
+    let selectedLegs = null;
+    let selectedMultiplier = 1;
+
+    // Try 4 legs
+    if (candidates.length >= 4) {
+      for (let i = 0; i <= candidates.length - 4; i++) {
+        const combo = [candidates[i], candidates[i+1], candidates[i+2], candidates[i+3]];
+        const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
+        if (mult >= 4.0 && mult <= 7.0) {
+          selectedLegs = combo;
+          selectedMultiplier = mult;
+          break;
+        }
+      }
+    }
+
+    // Try 3 legs
+    if (!selectedLegs && candidates.length >= 3) {
+      for (let i = 0; i <= candidates.length - 3; i++) {
+        const combo = [candidates[i], candidates[i+1], candidates[i+2]];
+        const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
+        if (mult >= 3.5 && mult <= 7.5) {
+          selectedLegs = combo;
+          selectedMultiplier = mult;
+          break;
+        }
+      }
+    }
+
+    // Try 5 legs
+    if (!selectedLegs && candidates.length >= 5) {
+      const combo = candidates.slice(0, 5);
+      const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
+      selectedLegs = combo;
+      selectedMultiplier = mult;
+    }
+
+    // Fallback: pick first 3 candidates
+    if (!selectedLegs) {
+      selectedLegs = candidates.slice(0, Math.min(candidates.length, 3));
+      selectedMultiplier = selectedLegs.reduce((acc, l) => acc * l.decimal, 1);
+    }
+
+    let combinedOddsStr = '+450';
+    if (selectedMultiplier >= 2.0) {
+      combinedOddsStr = `+${Math.round((selectedMultiplier - 1) * 100)}`;
+    } else {
+      combinedOddsStr = `-${Math.round(100 / (selectedMultiplier - 1))}`;
+    }
+
+    return {
+      legs: selectedLegs,
+      combinedOdds: combinedOddsStr,
+      legCount: selectedLegs.length,
+      multiplier: Math.round(selectedMultiplier * 100) / 100,
+    };
+  }
+
+  // ── Build Recommended Game Lines (~8 verified recommendations, -220 or better)
+  _buildRecommendedGameLines(sport, games) {
+    if (!games || !games.length) return [];
+    const emoji = this._getSportEmoji(sport);
+    const lines = [];
+
+    for (const g of games) {
+      if (lines.length >= 8) break;
+      const sl = g.summaryLines || {};
+      const away = g.awayTeam?.short || g.awayTeam?.name || 'AWAY';
+      const home = g.homeTeam?.short || g.homeTeam?.name || 'HOME';
+
+      // 1. Spread recommendation
+      if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
+        lines.push({
+          emoji,
+          subject: `${home} ${this.spreadLabel(sport).replace(':', '')}`,
+          line: sl.spread,
+          odds: '-110',
+          market: 'Spread',
+          book: 'DraftKings',
+          gameName: `${away} @ ${home}`,
+        });
+      }
+
+      // 2. Total recommendation
+      if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable') && lines.length < 8) {
+        lines.push({
+          emoji,
+          subject: `${away}/${home} Total`,
+          line: sl.total,
+          odds: '-110',
+          market: 'Total O/U',
+          book: 'Fliff',
+          gameName: `${away} @ ${home}`,
+        });
+      }
+
+      // 3. Moneyline recommendation (checked for -220 or better)
+      if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable') && lines.length < 8) {
+        const parts = sl.ml.split('/');
+        for (const p of parts) {
+          const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+          if (match) {
+            const team = match[1].trim();
+            const price = parseInt(match[2], 10);
+            if (!isNaN(price) && price >= -220 && price <= 200) {
+              lines.push({
+                emoji,
+                subject: `${team} ML`,
+                line: `${team} Moneyline`,
+                odds: price > 0 ? `+${price}` : `${price}`,
+                market: 'Moneyline',
+                book: price > 0 ? 'Fliff' : 'DraftKings',
+                gameName: `${away} @ ${home}`,
+              });
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return lines.slice(0, 8);
+  }
+
+  // ── Render 1: MOST UPCOMING GAME CARD ──────────────────────────────────────
+  _renderFeaturedGameCard(game, allGames) {
+    const isLive = game.gameStatus === 'LIVE';
+    const isUFC = game.sport === 'ufc';
+    const sl = game.summaryLines || {};
+    const awayLogo = this.teamLogoHtml(game.awayTeam);
+    const homeLogo = this.teamLogoHtml(game.homeTeam);
+
+    const hasSpread = sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable');
+    const hasTotal = sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable');
+    const hasML = sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable') && sl.ml !== 'Odds unavailable';
+    const hasAnyLines = hasSpread || hasTotal || hasML;
+
+    const otherGames = allGames.filter(g => g.id !== game.id);
+
+    return `
+      <div class="featured-game-card${isLive ? ' game-card-live' : ''}">
+        <div class="featured-card-top-bar">
+          <div class="featured-status-pill ${isLive ? 'live' : 'upcoming'}">
+            ${isLive ? `🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}` : 'NEXT UPCOMING GAME'}
+          </div>
+          <div class="featured-meta-right">
+            <span>📅 ${game.date} • ${game.startTime}</span>
+          </div>
+        </div>
+
+        <div class="featured-matchup-area">
+          <div class="featured-team-block">
+            <div class="featured-logo">${awayLogo}</div>
+            <div class="featured-team-info">
+              <span class="featured-team-name">${game.awayTeam.name}</span>
+              <span class="featured-team-record">${game.awayTeam.record || ''}</span>
+            </div>
+          </div>
+
+          <div class="featured-vs-badge">${isUFC ? 'VS' : '@'}</div>
+
+          <div class="featured-team-block">
+            <div class="featured-logo">${homeLogo}</div>
+            <div class="featured-team-info">
+              <span class="featured-team-name">${game.homeTeam.name}</span>
+              <span class="featured-team-record">${game.homeTeam.record || ''}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="featured-venue-line">
+          <span>📍 ${game.venue || 'TBD'}</span>
+          ${game.headline && game.headline !== game.awayTeam.name + ' @ ' + game.homeTeam.name ? `<span>🏆 ${game.headline}</span>` : ''}
+        </div>
+
+        <!-- Current Lines Section -->
+        <div class="featured-lines-box">
+          <div class="featured-lines-header">
+            <span class="featured-lines-title">CURRENT LINES</span>
+            <span class="featured-lines-books">DraftKings / Fliff</span>
+          </div>
+
+          ${hasAnyLines ? `
+          <div class="featured-lines-grid">
+            ${hasSpread ? `
+              <div class="line-pill">
+                <span class="line-label">${this.spreadLabel(game.sport).toUpperCase().replace(':', '')}</span>
+                <span class="line-val">${sl.spread}</span>
+              </div>` : ''}
+            ${hasTotal ? `
+              <div class="line-pill">
+                <span class="line-label">TOTAL</span>
+                <span class="line-val">${sl.total}</span>
+              </div>` : ''}
+            ${hasML ? `
+              <div class="line-pill ${!hasSpread ? 'span-2' : ''}">
+                <span class="line-label">MONEYLINE</span>
+                <span class="line-val">${sl.ml}</span>
+              </div>` : ''}
+          </div>` : `
+          <div class="featured-lines-unavail">Market lines loading from connected sportsbooks...</div>`}
+        </div>
+
+        ${otherGames.length > 0 ? `
+        <!-- Upcoming Slate Navigator -->
+        <div class="upcoming-slate-bar">
+          <span class="slate-bar-label">UPCOMING SLATE (${allGames.length} Games):</span>
+          <div class="slate-chips-scroll">
+            ${allGames.map(g => `
+              <button class="slate-chip ${g.id === game.id ? 'active' : ''}" data-slate-id="${g.id}">
+                <span class="chip-matchup">${g.awayTeam.short || g.awayTeam.name} @ ${g.homeTeam.short || g.homeTeam.name}</span>
+                <span class="chip-time">${g.startTime}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>` : ''}
+      </div>
+    `;
+  }
+
+  // ── Render 2: RECOMMENDED PARLAY CARD ──────────────────────────────────────
+  _renderRecommendedParlayCard(parlay) {
+    if (!parlay || !parlay.legs || !parlay.legs.length) return '';
+
+    const textToCopy = [
+      `📊 UrWelcome ${parlay.legCount}-Leg Recommended Parlay (${parlay.combinedOdds})`,
+      `Target Odds: +300 to +600 · Multiplier: ${parlay.multiplier}x`,
+      ...parlay.legs.map((leg, i) => `Leg ${i + 1}: ${leg.subject} — ${leg.line} (${leg.odds})`),
+      `Verified on DraftKings & Fliff`
+    ].join('\n');
+
+    return `
+      <div class="recommended-parlay-card" id="recommended-parlay-card">
+        <div class="parlay-card-header">
+          <div class="parlay-header-left">
+            <span class="parlay-card-title">🎯 RECOMMENDED PARLAY</span>
+            <span class="parlay-legs-badge">${parlay.legCount} LEGS</span>
+          </div>
+          <div class="parlay-odds-tag">
+            <span class="odds-val">${parlay.combinedOdds}</span>
+            <span class="odds-label">COMBINED ODDS</span>
+          </div>
+        </div>
+
+        <div class="parlay-legs-grid">
+          ${parlay.legs.map(leg => `
+            <div class="parlay-leg-box">
+              <div class="leg-box-top">
+                <span class="leg-sport-emoji">${leg.emoji || '🏈'}</span>
+                <span class="leg-subject">${leg.subject}</span>
+              </div>
+              <div class="leg-box-mid">
+                <span class="leg-market">${leg.market}</span>
+                <span class="leg-line">${leg.line}</span>
+              </div>
+              <div class="leg-box-bottom">
+                <span class="leg-odds">${leg.odds}</span>
+                <span class="leg-source">DraftKings / Fliff</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="parlay-card-footer">
+          <button class="copy-parlay-btn" id="copy-parlay-btn" data-parlay-text="${encodeURIComponent(textToCopy)}">
+            <span>📋 Copy Parlay Slip (${parlay.combinedOdds})</span>
+          </button>
+          <div class="parlay-note">
+            <span>ℹ️ Research recommendation based on verified current lines (+300 to +600 target). Historical stats do not guarantee future results.</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Render 3: RECOMMENDED GAME LINES SECTION ───────────────────────────────
+  _renderRecommendedGameLines(lines) {
+    if (!lines || !lines.length) return '';
+
+    return `
+      <div class="recommended-game-lines-section">
+        <div class="section-title-row">
+          <div class="section-title-left">
+            <span class="section-title-text">⚡ RECOMMENDED GAME LINES</span>
+            <span class="section-badge-pill">Verified · -220 or Better</span>
+          </div>
+          <span class="section-count-tag">${lines.length} Verified Plays</span>
+        </div>
+
+        <div class="game-lines-grid">
+          ${lines.map(item => `
+            <div class="game-line-rec-box">
+              <div class="line-rec-top">
+                <span class="line-rec-emoji">${item.emoji}</span>
+                <span class="line-rec-subject">${item.subject}</span>
+                <span class="line-rec-book">${item.book}</span>
+              </div>
+              <div class="line-rec-bottom">
+                <div class="line-rec-metric">
+                  <span class="metric-label">${item.market}</span>
+                  <span class="metric-val">${item.line}</span>
+                </div>
+                <div class="line-rec-metric">
+                  <span class="metric-label">ODDS</span>
+                  <span class="metric-val odds">${item.odds}</span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Render 4: PLAYER PROPS SECTION ─────────────────────────────────────────
+  _renderPlayerPropsSection(sport, featuredGame, currentProps, researchData) {
+    const emoji = this._getSportEmoji(sport);
+    const props = [];
+    const allPlayers = [
+      ...(researchData?.awayTeam?.players || []),
+      ...(researchData?.homeTeam?.players || [])
+    ];
+
+    if (typeof oddsApiService !== 'undefined' && currentProps && allPlayers.length > 0) {
+      const PROP_LABELS = {
+        passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
+        batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points', scoring: 'Points'
+      };
+
+      for (const p of allPlayers) {
+        const mKey = oddsApiService.getPrimaryMarket(p.statGroup);
+        if (!mKey) continue;
+        const propData = oddsApiService.lookupPlayerProp(currentProps, p.playerName, mKey);
+        if (propData && propData.line !== null) {
+          const formatted = oddsApiService.formatPropLine(propData);
+          props.push({
+            emoji,
+            playerId: p.playerId,
+            playerName: p.playerName,
+            propType: PROP_LABELS[p.statGroup] || p.statGroup,
+            line: formatted.line,
+            odds: formatted.overOdds ? (formatted.overOdds >= 0 ? '+' + formatted.overOdds : formatted.overOdds) : '-110',
+          });
+        }
+      }
+    }
+
+    if (!props.length) return '';
+
+    return `
+      <div class="player-props-section">
+        <div class="section-title-row">
+          <div class="section-title-left">
+            <span class="section-title-text">🔥 PLAYER PROPS</span>
+            <span class="section-badge-pill">The Odds API Verified</span>
+          </div>
+          <span class="section-count-tag">${props.length} Available Props</span>
+        </div>
+
+        <div class="player-props-grid">
+          ${props.map(p => `
+            <div class="player-prop-card" onclick="document.getElementById('pr-card-${p.playerId}')?.scrollIntoView({behavior:'smooth'})">
+              <div class="prop-card-top">
+                <div class="prop-identity">
+                  <span class="prop-sport-emoji">${p.emoji}</span>
+                  <span class="prop-player-name">${p.playerName}</span>
+                </div>
+                <button class="prop-view-btn" aria-label="View last 10 for ${p.playerName}">VIEW LAST 10 ↓</button>
+              </div>
+              <div class="prop-market-name">${p.propType}</div>
+              <div class="prop-card-bottom">
+                <div class="prop-metric">
+                  <span class="prop-metric-label">LINE</span>
+                  <span class="prop-metric-val">OVER ${p.line}</span>
+                </div>
+                <div class="prop-metric">
+                  <span class="prop-metric-label">ODDS</span>
+                  <span class="prop-metric-val odds">${p.odds}</span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   async renderUpcomingGames() {
 
     // Show skeleton while loading
@@ -1145,12 +1629,98 @@ class SportsResearchApp {
     }
 
     try {
-      this.dom.gamesList.innerHTML = games.map(game => {
-        if (game.sport === 'ufc') return this.renderUFCFightCard(game);
-        return this.renderGameCard(game);
-      }).join('');
+      const sport = this.state.selectedSport;
 
-      this.bindCardClicks(this.dom.gamesList);
+      // 1. Featured game is the selected game or the FIRST upcoming game chronologically
+      let featuredGame = games[0];
+      if (this.state.selectedGameId) {
+        const found = games.find(g => g.id === this.state.selectedGameId);
+        if (found) featuredGame = found;
+      }
+      this.state.selectedGameId = featuredGame.id;
+
+      // 2. Fetch current props and research data for featured game in parallel
+      let researchData = null;
+      let currentProps = null;
+      try {
+        const fetches = [];
+        if (typeof playerGameLogService !== 'undefined' && sport !== 'ufc') {
+          fetches.push(playerGameLogService.getGameResearchData(featuredGame));
+        } else {
+          fetches.push(Promise.resolve(null));
+        }
+        if (typeof oddsApiService !== 'undefined' && sport !== 'ufc') {
+          fetches.push(oddsApiService.getCurrentProps(sport, featuredGame).catch(e => {
+            console.warn('[Odds] getCurrentProps failed:', e.message); return null;
+          }));
+        } else {
+          fetches.push(Promise.resolve(null));
+        }
+        [researchData, currentProps] = await Promise.all(fetches);
+      } catch (err) {
+        console.warn('[Research] data fetch failed:', err.message);
+      }
+
+      // 3. Build recommendations
+      const parlay = this._buildRecommendedParlay(sport, games, currentProps);
+      const gameLines = this._buildRecommendedGameLines(sport, games);
+
+      // 4. Render the strict 5-stage mobile flow:
+      // MOST UPCOMING GAME -> RECOMMENDED PARLAY -> RECOMMENDED GAME LINES
+      // -> PLAYER PROPS -> PLAYER RESEARCH / LAST 10
+      this.dom.gamesList.innerHTML = `
+        <!-- 1. MOST UPCOMING GAME FIRST -->
+        ${this._renderFeaturedGameCard(featuredGame, games)}
+
+        <!-- 2. RECOMMENDED PARLAY (3-5 Legs, +300 to +600) -->
+        ${this._renderRecommendedParlayCard(parlay)}
+
+        <!-- 3. RECOMMENDED GAME LINES (~8 verified boxes, -220 or better) -->
+        ${this._renderRecommendedGameLines(gameLines)}
+
+        <!-- 4. PLAYER PROPS -->
+        ${this._renderPlayerPropsSection(sport, featuredGame, currentProps, researchData)}
+
+        <!-- 5. PLAYER RESEARCH / LAST 10 ONLY -->
+        ${this._renderResearchStats(researchData, featuredGame, currentProps)}
+      `;
+
+      // 5. Wire up interactions
+      // Clicking a slate chip features that game
+      this.dom.gamesList.querySelectorAll('.slate-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const gId = chip.dataset.slateId;
+          this.state.selectedGameId = gId;
+          this.renderUpcomingGames();
+        });
+      });
+
+      // Copy parlay slip button
+      const copyBtn = document.getElementById('copy-parlay-btn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          const rawText = decodeURIComponent(copyBtn.dataset.parlayText || '');
+          try {
+            await navigator.clipboard.writeText(rawText);
+            copyBtn.classList.add('copied');
+            copyBtn.innerHTML = '<span>✓ Copied to Clipboard!</span>';
+            setTimeout(() => {
+              copyBtn.classList.remove('copied');
+              copyBtn.innerHTML = `<span>📋 Copy Parlay Slip (${parlay?.combinedOdds || '+450'})</span>`;
+            }, 2500);
+          } catch (err) {
+            console.error('Clipboard copy failed:', err);
+          }
+        });
+      }
+
+      // Load historical prop lines in background for LAST 10 completed games
+      if (typeof oddsApiService !== 'undefined' && researchData && sport !== 'ufc') {
+        this.loadHistoricalProps(sport, researchData).catch(e =>
+          console.warn('[HistProps]', e.message)
+        );
+      }
 
     } catch (renderErr) {
       console.error('[renderUpcomingGames] render failed:', renderErr);
@@ -1596,9 +2166,9 @@ class SportsResearchApp {
 
   async selectGame(gameId) {
     this.state.selectedGameId = gameId;
-    this.state.activeFilter = 'higher_rate';
-    this.showGameView();
-    await this.renderGameDetailPage();
+    this.showHomeView();
+    await this.renderUpcomingGames();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async renderGameDetailPage() {

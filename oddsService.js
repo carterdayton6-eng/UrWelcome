@@ -88,22 +88,40 @@ export class OddsApiService {
       .trim();
   }
 
-  // ── Low-level fetch to our API proxy ──────────────────────────────────────
-  async _call(endpoint, params = {}) {
+  // ── Low-level fetch to our API proxy with automatic retries ───────────────
+  async _call(endpoint, params = {}, maxRetries = 2) {
     const qs = new URLSearchParams(params).toString();
     const url = `/api/${endpoint}${qs ? '?' + qs : ''}`;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      const json = await res.json();
-      if (json.remaining) this._quotaRemaining = json.remaining;
-      return json;
-    } catch (err) {
-      if (err.name === 'AbortError') return { error: 'Request timed out' };
-      return { error: err.message };
-    } finally {
-      clearTimeout(id);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 10000);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        const json = await res.json();
+        if (json.remaining) this._quotaRemaining = json.remaining;
+
+        // Success: valid response with data and no error
+        if (!json.error && (json.data !== undefined || json.success)) {
+          return json;
+        }
+
+        // If error and we have retries left, wait and retry
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+          continue;
+        }
+        return json;
+      } catch (err) {
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+          continue;
+        }
+        if (err.name === 'AbortError') return { error: 'Request timed out' };
+        return { error: err.message };
+      } finally {
+        clearTimeout(id);
+      }
     }
   }
 
@@ -226,14 +244,38 @@ export class OddsApiService {
     const cached = this._currentPropsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.CURRENT_TTL) return cached.data;
 
-    const result = await this._call('props', { sport: oddsPort, eventId: oddsEventId });
-    if (result.error || !result.data) {
+    let result = await this._call('props', { sport: oddsPort, eventId: oddsEventId });
+    // Retry once if missing or errored
+    if (!result || result.error || !result.data) {
+      await new Promise(r => setTimeout(r, 500));
+      result = await this._call('props', { sport: oddsPort, eventId: oddsEventId });
+    }
+    if (!result || result.error || !result.data) {
       return null;
     }
 
     const parsed = this._parseProps(result.data);
     this._currentPropsCache.set(cacheKey, { data: parsed, ts: Date.now() });
     return parsed;
+  }
+
+  // ── Fetch current sportsbook game odds across the league ─────────────────
+  async getLiveGameOdds(sport) {
+    const oddsPort = ODDS_SPORT_MAP[sport];
+    if (!oddsPort) return null;
+    const cacheKey = `odds_${sport}`;
+    const cached = this._currentPropsCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < this.CURRENT_TTL) return cached.data;
+
+    let res = await this._call('odds', { sport: oddsPort });
+    if (!res || res.error || !res.data) {
+      await new Promise(r => setTimeout(r, 500));
+      res = await this._call('odds', { sport: oddsPort });
+    }
+    if (!res || res.error || !res.data) return null;
+
+    this._currentPropsCache.set(cacheKey, { data: res.data, ts: Date.now() });
+    return res.data;
   }
 
   // ── Get historical props for a completed game ─────────────────────────────
