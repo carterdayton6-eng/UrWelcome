@@ -3768,3 +3768,508 @@ body {
     font-size: 16px !important;
   }
 }
+
+
+/* ==========================================================================
+   MOBILE-FIRST RESTORATION — GAME DETAIL, CURRENT LINES & RECOMMENDED RESEARCH
+   ========================================================================== */
+
+/* ── Primary Game Matchup Card ───────────────────────────────────────────── */
+.detail-game-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(245, 185, 32, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.detail-card-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.detail-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 99px;
+  text-transform: uppercase;
+}
+
+.detail-status-pill.live {
+  background: #ef4444;
+  color: #fff;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+.detail-status-pill.upcoming {
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+}
+
+.detail-verified-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+/* Matchup Area */
+.detail-matchup-area {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.detail-team-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-logo-wrapper {
+  flex-shrink: 0;
+}
+
+.detail-logo-wrapper .team-logo-img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.detail-team-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detail-team-name {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.detail-team-record {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.detail-vs-badge {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 99px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+}
+
+/* Meta info row */
+.detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 14px;
+}
+
+.detail-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Current Lines Container */
+.detail-lines-container {
+  margin-top: 10px;
+}
+
+.detail-lines-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.detail-lines-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #f1f5f9;
+}
+
+.detail-lines-books {
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.detail-lines-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.line-box {
+  background: #0b1019;
+  border: 1px solid #233148;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.line-box.span-2 {
+  grid-column: span 2;
+}
+
+.line-box-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.line-box-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.detail-lines-unavail {
+  font-size: 13px;
+  color: #64748b;
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ── 3. RECOMMENDED RESEARCH SECTION ─────────────────────────────────────── */
+.rec-section {
+  background: #0e1420;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.rec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rec-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rec-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}
+
+.rec-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+.rec-count-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+
+.rec-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rec-card {
+  background: #141c2c;
+  border: 1px solid #27364f;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.rec-card:hover {
+  border-color: #38bdf8;
+  background: #182338;
+}
+
+.rec-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rec-player-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rec-player-name {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.rec-prop-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.rec-arrow-btn {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #f5b920;
+  background: rgba(245, 185, 32, 0.1);
+  border: 1px solid rgba(245, 185, 32, 0.35);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rec-arrow-btn:hover {
+  background: rgba(245, 185, 32, 0.25);
+  color: #ffffff;
+}
+
+.rec-card-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rec-metric-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rec-metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.rec-metric-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.rec-metric-val.sub {
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.rec-unavail-box {
+  background: #111724;
+  border: 1px solid rgba(245, 185, 32, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.rec-unavail-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f5b920;
+  margin-bottom: 3px;
+}
+
+.rec-unavail-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+/* ── UFC Detail Card ──────────────────────────────────────────────────────── */
+.ufc-detail-card {
+  padding: 16px;
+}
+
+.ufc-record-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: #f8fafc;
+  margin-top: 3px;
+}
+
+.ufc-stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+}
+
+.ufc-stat-label { color: #94a3b8; font-weight: 600; }
+.ufc-stat-val   { color: #ffffff; font-weight: 700; }
+
+/* ── Mobile Polish for Home Game Cards ───────────────────────────────────── */
+@media (max-width: 768px) {
+  .game-card {
+    padding: 14px 16px !important;
+    gap: 0 !important;
+    border-radius: 12px !important;
+  }
+
+  .game-col-datetime {
+    padding-bottom: 8px !important;
+    font-size: 13px !important;
+  }
+
+  .game-date-str {
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    color: #cbd5e1 !important;
+  }
+
+  .game-time-str {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: #f8fafc !important;
+  }
+
+  .team-name-text {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+  }
+
+  .team-record-text {
+    font-size: 13px !important;
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
+  }
+
+  .game-col-odds {
+    padding: 8px 0 !important;
+    margin: 8px 0 !important;
+    gap: 4px 14px !important;
+  }
+
+  .odds-label {
+    font-size: 13px !important;
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
+  }
+
+  .odds-value {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+  }
+
+  .research-bets-btn, .ufc-research-btn {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    border-radius: 8px !important;
+    letter-spacing: 0.05em !important;
+  }
+
+  /* Player Research Card Polish */
+  .pr-card {
+    padding: 16px !important;
+    border-radius: 12px !important;
+  }
+
+  .pr-player-name {
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
+  }
+
+  .pr-group-badge {
+    font-size: 12px !important;
+    padding: 3px 9px !important;
+  }
+
+  .pr-log-tabs {
+    gap: 8px !important;
+    margin: 12px 0 10px !important;
+  }
+
+  .pr-log-tab {
+    padding: 8px 16px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    border-radius: 8px !important;
+    min-height: 40px !important;
+  }
+
+  .pr-log-row {
+    font-size: 13px !important;
+    padding: 8px 0 !important;
+  }
+}
