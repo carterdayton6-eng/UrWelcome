@@ -401,10 +401,13 @@ export class LiveDataService {
       const activeEvents = events.filter(ev => {
         const st = ev.status && ev.status.type;
         if (!st) return true; // keep if status unknown
-        // Exclude only fully completed events
+        // Exclude completed events
         if (st.completed === true) return false;
-        if (st.name === 'STATUS_FINAL' || st.name === 'STATUS_FULL_TIME' ||
-            st.name === 'STATUS_END_PERIOD' && st.completed) return false;
+        if (st.state === 'post') return false;
+        if (st.name === 'STATUS_FINAL' || st.name === 'STATUS_FULL_TIME') return false;
+        const d = (st.detail || '').toLowerCase();
+        const sd = (st.shortDetail || '').toLowerCase();
+        if (d.includes('final') || sd.includes('final')) return false;
         return true;
       });
 
@@ -549,14 +552,7 @@ export class LiveDataService {
       awayTeam._invalid = true;
     }
 
-    let spreadText = details;
-    if (!spreadText) {
-      if (sport === 'nfl' || sport === 'cfb') spreadText = `${homeTeam.short} -3.0`;
-      else if (sport === 'mlb') spreadText = `${homeTeam.short} -1.5`;
-      else if (sport === 'nba') spreadText = `${homeTeam.short} -4.5`;
-      else if (sport === 'ufc') spreadText = '';
-      else spreadText = `${homeTeam.short} -1.5`;
-    }
+    let spreadText = details || '';
 
     // ML text: use actual odds from ESPN if available
     let mlText = '';
@@ -575,18 +571,15 @@ export class LiveDataService {
           : `${homeTeam.short} ${homeStr} / ${awayTeam.short} ${awayStr}`;
       }
     }
-    // For team sports: show a fallback consensus line; for UFC: never fabricate
-    if (!mlText && !isUFC) {
-      mlText = `${homeTeam.short} -135 / ${awayTeam.short} +115`;
-    }
 
     // Weight class for UFC
     const weightClass = isUFC && comp.type ? comp.type.text : null;
 
-    const summaryLines = isUFC
-      ? { spread: '', total: 'O/U 2.5 Rounds', ml: mlText || 'Odds unavailable' }
-      : { spread: spreadText, total: overUnder || 'O/U TBD', ml: mlText };
-
+    const summaryLines = {
+      spread: spreadText,
+      total: overUnder ? `O/U ${overUnder}` : '',
+      ml: mlText
+    };
 
     // Determine game lifecycle status
     const evStatus = ev.status && ev.status.type;
@@ -596,7 +589,14 @@ export class LiveDataService {
       evStatus.name === 'STATUS_END_PERIOD' ||
       (evStatus.state && evStatus.state === 'in')
     );
-    const gameStatus = isLiveNow ? 'LIVE' : 'UPCOMING';
+    const isCompleted = evStatus && (
+      evStatus.completed === true ||
+      evStatus.state === 'post' ||
+      evStatus.name === 'STATUS_FINAL' ||
+      (evStatus.detail && evStatus.detail.toLowerCase().includes('final')) ||
+      (evStatus.shortDetail && evStatus.shortDetail.toLowerCase().includes('final'))
+    );
+    const gameStatus = isLiveNow ? 'LIVE' : (isCompleted ? 'FINAL' : 'UPCOMING');
     const gameStatusDetail = evStatus ? (evStatus.shortDetail || evStatus.detail || '') : '';
 
     return {
@@ -1815,12 +1815,17 @@ export class PlayerGameLogService {
 
   _getPrimaryStat(groupName, stats, sport) {
     const key = this.primaryStatKey[groupName];
-    if (key && stats[key] !== undefined) return { key, value: stats[key] };
+    if (key && stats[key] !== undefined) {
+      const val = stats[key];
+      return typeof val === 'number' ? val : (parseFloat(val) || 0);
+    }
     // Fallback: first numeric value in stats
     for (const [k, v] of Object.entries(stats)) {
-      if (typeof v === 'number') return { key: k, value: v };
+      if (typeof v === 'number') return v;
+      const num = parseFloat(v);
+      if (!isNaN(num)) return num;
     }
-    return null;
+    return 0;
   }
 
   _formatDate(d) {

@@ -1107,15 +1107,25 @@ class SportsResearchApp {
   }
 
   // ── Build ONE Recommended Parlay (3–5 legs, target +300 to +600 combined odds)
-  _buildRecommendedParlay(sport, games, currentProps, selectedGame) {
+  _buildRecommendedParlay(sport, games, currentProps, selectedGame, gameOddsData, researchData) {
     if (!selectedGame) return null;
     const emoji = this._getSportEmoji(sport);
-    const candidates = [];
     const isUFC = sport === 'ufc';
     const awayShort = selectedGame.awayTeam?.short || selectedGame.awayTeam?.name || 'AWAY';
     const homeShort = selectedGame.homeTeam?.short || selectedGame.homeTeam?.name || 'HOME';
     const matchupName = isUFC ? `${awayShort} vs ${homeShort}` : `${awayShort} @ ${homeShort}`;
-    const sl = selectedGame.summaryLines || {};
+
+    const toDecimal = (american) => {
+      const p = Number(american);
+      if (isNaN(p) || p === 0) return 1.91;
+      return p > 0 ? 1 + (p / 100) : 1 + (100 / Math.abs(p));
+    };
+
+    const fmtOdds = (p) => {
+      const n = Number(p);
+      if (isNaN(n)) return '';
+      return n > 0 ? `+${n}` : `${n}`;
+    };
 
     const PROP_LABELS = {
       player_pass_yds: 'Pass Yds', player_rush_yds: 'Rush Yds', player_reception_yds: 'Rec Yds',
@@ -1125,146 +1135,29 @@ class SportsResearchApp {
       player_goals: 'Goals', passing: 'Pass Yds', rushing: 'Rush Yds', receiving: 'Rec Yds'
     };
 
-    // 1. Gather game line legs strictly for selectedGame
-    // Spread candidate
-    if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
-      const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
-      const match = sl.spread.match(/([A-Z0-9]+)\s*([+-]\d+\.?\d*)/i);
-      if (match) {
-        const favTeam = match[1];
-        const spreadNum = parseFloat(match[2]);
-        candidates.push({
-          emoji,
-          subject: `${favTeam} ${spreadLabel}`,
-          market: spreadLabel,
-          line: `${favTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
-          odds: '-110',
-          decimal: 1.91,
-          gameName: matchupName,
-        });
-      } else {
-        candidates.push({
-          emoji,
-          subject: `${homeShort} ${spreadLabel}`,
-          market: spreadLabel,
-          line: sl.spread,
-          odds: '-110',
-          decimal: 1.91,
-          gameName: matchupName,
-        });
-      }
-    }
+    const candidates = [];
 
-    // Total candidate
-    if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
-      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
-      const totalNum = totalMatch ? totalMatch[1] : sl.total;
-      const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
-      candidates.push({
-        emoji,
-        subject: `${awayShort}/${homeShort} Total`,
-        market: totalLabel,
-        line: `Over ${totalNum}`,
-        odds: '-110',
-        decimal: 1.91,
-        gameName: matchupName,
-      });
-    }
-
-    // Team Totals (non-UFC)
-    if (!isUFC && sl.total && sl.total !== 'N/A') {
-      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
-      if (totalMatch) {
-        const totalVal = parseFloat(totalMatch[1]);
-        if (!isNaN(totalVal) && totalVal > 0) {
-          const halfTotal = Math.round((totalVal / 2) * 2) / 2;
-          const awayTT = Math.max(1, halfTotal - 2.5);
-          const homeTT = Math.max(1, halfTotal + 2.5);
-          candidates.push({
-            emoji,
-            subject: `${awayShort} Team Total`,
-            market: 'Team Total',
-            line: `Over ${awayTT}`,
-            odds: '-115',
-            decimal: 1.87,
-            gameName: matchupName,
-          });
-          candidates.push({
-            emoji,
-            subject: `${homeShort} Team Total`,
-            market: 'Team Total',
-            line: `Over ${homeTT}`,
-            odds: '-110',
-            decimal: 1.91,
-            gameName: matchupName,
-          });
-        }
-      }
-    }
-
-    // Moneyline candidates (priced -220 to +160)
-    if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
-      const parts = sl.ml.split('/');
-      for (const p of parts) {
-        const m = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
-        if (m) {
-          const team = m[1].trim();
-          const price = parseInt(m[2], 10);
-          if (!isNaN(price) && price >= -220 && price <= 160) {
-            const dec = price > 0 ? 1 + (price / 100) : 1 + (100 / Math.abs(price));
-            candidates.push({
-              emoji,
-              subject: `${team} ML`,
-              market: isUFC ? 'Fight Winner' : 'Moneyline',
-              line: `${team} Moneyline`,
-              odds: price > 0 ? `+${price}` : `${price}`,
-              decimal: dec,
-              gameName: matchupName,
-            });
-          }
-        }
-      }
-    }
-
-    // UFC Specific fight markets
-    if (isUFC) {
-      candidates.push({
-        emoji: '🥊',
-        subject: `${awayShort} vs ${homeShort}`,
-        market: 'Fight Outcome',
-        line: 'Fight Goes the Distance: NO',
-        odds: '-140',
-        decimal: 1.71,
-        gameName: matchupName,
-      });
-      candidates.push({
-        emoji: '🥊',
-        subject: `${homeShort} Rounds`,
-        market: 'Round Prop',
-        line: 'Over 1.5 Rounds',
-        odds: '-165',
-        decimal: 1.61,
-        gameName: matchupName,
-      });
-    }
-
-    // 2. Gather verified player props for this game from currentProps
+    // 1. Gather verified player props for this game from currentProps
     if (typeof oddsApiService !== 'undefined' && currentProps) {
       for (const [pNorm, markets] of Object.entries(currentProps)) {
         for (const [mKey, pData] of Object.entries(markets)) {
           if (pData && pData.line !== null) {
-            const overPrice = pData.overOdds || -110;
-            if (overPrice >= -220 && overPrice <= 160) {
-              const dec = overPrice > 0 ? 1 + (overPrice / 100) : 1 + (100 / Math.abs(overPrice));
+            const overPrice = pData.overOdds != null ? Number(pData.overOdds) : null;
+            // Select props with reasonable prices (-220 to +160)
+            if (overPrice !== null && overPrice >= -220 && overPrice <= 160) {
               const titleName = pNorm.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
               const propLabel = PROP_LABELS[mKey] || 'Player Prop';
+              const bookTitle = (pData.bookmakers && pData.bookmakers[0]?.name) || 'DraftKings';
               candidates.push({
+                type: 'prop',
+                playerId: pNorm,
                 emoji,
                 subject: `${titleName} ${propLabel}`,
                 market: propLabel,
                 line: `Over ${pData.line}`,
-                odds: overPrice > 0 ? `+${overPrice}` : `${overPrice}`,
-                decimal: dec,
+                odds: fmtOdds(overPrice),
+                decimal: toDecimal(overPrice),
+                book: bookTitle,
                 gameName: matchupName,
               });
               break; // At most one prop per player in parlay
@@ -1274,39 +1167,243 @@ class SportsResearchApp {
       }
     }
 
-    // 3. Fallback: if candidates are fewer than 3, borrow top game lines from other games on slate
+    // 2. Gather verified game lines from gameOddsData (or fallback to ESPN summaryLines)
+    if (gameOddsData) {
+      // Spreads
+      if (gameOddsData.spreads && gameOddsData.spreads.length > 0) {
+        for (const s of gameOddsData.spreads) {
+          if (s.price >= -220 && s.price <= 160) {
+            const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
+            const spreadStr = s.point > 0 ? `+${s.point}` : `${s.point}`;
+            candidates.push({
+              type: 'spread',
+              sideId: s.teamShort,
+              emoji,
+              subject: `${s.teamShort} ${spreadLabel}`,
+              market: spreadLabel,
+              line: `${s.teamShort} ${spreadStr}`,
+              odds: s.priceStr,
+              decimal: s.decimal,
+              book: s.bookmaker || 'DraftKings',
+              gameName: matchupName,
+            });
+          }
+        }
+      }
+      // Totals
+      if (gameOddsData.totals && gameOddsData.totals.length > 0) {
+        for (const t of gameOddsData.totals) {
+          if (t.price >= -220 && t.price <= 160) {
+            const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
+            candidates.push({
+              type: 'total',
+              sideId: t.side,
+              emoji,
+              subject: `${awayShort}/${homeShort} ${t.side}`,
+              market: totalLabel,
+              line: `${t.side} ${t.point}`,
+              odds: t.priceStr,
+              decimal: t.decimal,
+              book: t.bookmaker || 'DraftKings',
+              gameName: matchupName,
+            });
+          }
+        }
+      }
+      // Moneylines
+      if (gameOddsData.moneylines && gameOddsData.moneylines.length > 0) {
+        for (const m of gameOddsData.moneylines) {
+          if (m.price >= -220 && m.price <= 160) {
+            candidates.push({
+              type: 'ml',
+              sideId: m.teamShort,
+              emoji,
+              subject: `${m.teamShort} ML`,
+              market: isUFC ? 'Fight Winner' : 'Moneyline',
+              line: `${m.teamShort} Moneyline`,
+              odds: m.priceStr,
+              decimal: m.decimal,
+              book: m.bookmaker || 'DraftKings',
+              gameName: matchupName,
+            });
+          }
+        }
+      }
+    } else {
+      // Fallback from selectedGame.summaryLines
+      const sl = selectedGame.summaryLines || {};
+      if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
+        const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
+        const match = sl.spread.match(/([A-Z0-9]+)\s*([+-]\d+\.?\d*)/i);
+        if (match) {
+          const favTeam = match[1];
+          const spreadNum = parseFloat(match[2]);
+          candidates.push({
+            type: 'spread',
+            sideId: favTeam,
+            emoji,
+            subject: `${favTeam} ${spreadLabel}`,
+            market: spreadLabel,
+            line: `${favTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
+            odds: '-110',
+            decimal: 1.91,
+            book: 'DraftKings',
+            gameName: matchupName,
+          });
+        }
+      }
+      if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
+        const totalMatch = sl.total.match(/(\d+\.?\d*)/);
+        const totalNum = totalMatch ? totalMatch[1] : sl.total;
+        const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
+        candidates.push({
+          type: 'total',
+          sideId: 'Over',
+          emoji,
+          subject: `${awayShort}/${homeShort} Over`,
+          market: totalLabel,
+          line: `Over ${totalNum}`,
+          odds: '-110',
+          decimal: 1.91,
+          book: 'DraftKings',
+          gameName: matchupName,
+        });
+      }
+      if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
+        const parts = sl.ml.split('/');
+        for (const p of parts) {
+          const m = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+          if (m) {
+            const team = m[1].trim();
+            const price = parseInt(m[2], 10);
+            if (!isNaN(price) && price >= -220 && price <= 160) {
+              candidates.push({
+                type: 'ml',
+                sideId: team,
+                emoji,
+                subject: `${team} ML`,
+                market: isUFC ? 'Fight Winner' : 'Moneyline',
+                line: `${team} Moneyline`,
+                odds: fmtOdds(price),
+                decimal: toDecimal(price),
+                book: 'DraftKings',
+                gameName: matchupName,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 3. For UFC or games with fewer than 3 candidates:
+    // Supplement from other verified matches on the same slate (e.g. other fights on the UFC card)
     if (candidates.length < 3 && games && games.length > 1) {
       for (const og of games) {
         if (og.id === selectedGame.id) continue;
-        const oSL = og.summaryLines || {};
         const oAway = og.awayTeam?.short || og.awayTeam?.name || 'AWAY';
         const oHome = og.homeTeam?.short || og.homeTeam?.name || 'HOME';
-        if (oSL.spread && oSL.spread !== 'N/A' && !oSL.spread.includes('unavailable')) {
+        const oMatchup = isUFC ? `${oAway} vs ${oHome}` : `${oAway} @ ${oHome}`;
+        const oSL = og.summaryLines || {};
+
+        if (oSL.ml && oSL.ml !== 'N/A' && !oSL.ml.includes('unavailable')) {
+          const parts = oSL.ml.split('/');
+          for (const p of parts) {
+            const m = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+            if (m) {
+              const team = m[1].trim();
+              const price = parseInt(m[2], 10);
+              if (!isNaN(price) && price >= -220 && price <= 160) {
+                candidates.push({
+                  type: 'slate_ml',
+                  sideId: team,
+                  emoji,
+                  subject: `${team} ML`,
+                  market: isUFC ? 'Fight Winner' : 'Moneyline',
+                  line: `${team} Moneyline`,
+                  odds: fmtOdds(price),
+                  decimal: toDecimal(price),
+                  book: 'DraftKings',
+                  gameName: oMatchup,
+                });
+                break;
+              }
+            }
+          }
+        } else if (oSL.spread && oSL.spread !== 'N/A' && !oSL.spread.includes('unavailable')) {
           candidates.push({
+            type: 'slate_spread',
+            sideId: oHome,
             emoji,
             subject: `${oHome} Spread`,
             market: this.spreadLabel(sport).replace(':', '').trim(),
             line: oSL.spread,
             odds: '-110',
             decimal: 1.91,
-            gameName: `${oAway} @ ${oHome}`,
+            book: 'DraftKings',
+            gameName: oMatchup,
           });
         }
-        if (candidates.length >= 4) break;
+        if (candidates.length >= 6) break;
       }
     }
 
     if (candidates.length < 2) return null;
 
-    // Target combined odds: +300 to +600 (multiplier 4.0 to 7.0)
+    // Helper to test if a combination has conflicting legs
+    const hasConflicts = (combo) => {
+      let spreadCount = 0;
+      let totalCount = 0;
+      const seenPlayers = new Set();
+      const seenGames = new Set();
+
+      for (const leg of combo) {
+        if (leg.type === 'spread') {
+          spreadCount++;
+          if (spreadCount > 1) return true;
+        }
+        if (leg.type === 'total') {
+          totalCount++;
+          if (totalCount > 1) return true;
+        }
+        if (leg.type === 'prop') {
+          if (seenPlayers.has(leg.playerId)) return true;
+          seenPlayers.add(leg.playerId);
+        }
+        if (leg.type === 'slate_ml' || leg.type === 'slate_spread') {
+          if (seenGames.has(leg.gameName)) return true;
+          seenGames.add(leg.gameName);
+        }
+      }
+      return false;
+    };
+
+    // Helper: generate combinations of length k
+    const getCombos = (arr, k) => {
+      const res = [];
+      const backtrack = (start, current) => {
+        if (current.length === k) {
+          res.push([...current]);
+          return;
+        }
+        for (let i = start; i < arr.length; i++) {
+          current.push(arr[i]);
+          backtrack(i + 1, current);
+          current.pop();
+        }
+      };
+      backtrack(0, []);
+      return res;
+    };
+
     let selectedLegs = null;
     let selectedMultiplier = 1;
 
-    // Search 3 to 5 legs for the best combo in target odds range (+300 to +600)
+    // 1. Search for 3-leg, 4-leg, then 5-leg combination in target range (+300 to +600, multiplier 4.0 to 7.0)
     for (const legCount of [3, 4, 5]) {
       if (candidates.length >= legCount) {
-        for (let i = 0; i <= candidates.length - legCount; i++) {
-          const combo = candidates.slice(i, i + legCount);
+        const combos = getCombos(candidates, legCount);
+        for (const combo of combos) {
+          if (hasConflicts(combo)) continue;
           const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
           if (mult >= 4.0 && mult <= 7.0) {
             selectedLegs = combo;
@@ -1318,27 +1415,39 @@ class SportsResearchApp {
       }
     }
 
-    // Secondary search: broader target (+250 to +750, multiplier 3.5 to 8.5)
+    // 2. Secondary search: wider target range (+250 to +750, multiplier 3.5 to 8.5)
     if (!selectedLegs) {
       for (const legCount of [3, 4]) {
         if (candidates.length >= legCount) {
-          const combo = candidates.slice(0, legCount);
-          const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
-          if (mult >= 3.5 && mult <= 8.5) {
-            selectedLegs = combo;
-            selectedMultiplier = mult;
-            break;
+          const combos = getCombos(candidates, legCount);
+          for (const combo of combos) {
+            if (hasConflicts(combo)) continue;
+            const mult = combo.reduce((acc, l) => acc * l.decimal, 1);
+            if (mult >= 3.5 && mult <= 8.5) {
+              selectedLegs = combo;
+              selectedMultiplier = mult;
+              break;
+            }
           }
+          if (selectedLegs) break;
         }
       }
     }
 
-    // Fallback: pick first 3 candidates
+    // 3. Fallback: take best non-conflicting candidates
     if (!selectedLegs) {
-      selectedLegs = candidates.slice(0, Math.min(candidates.length, 3));
+      const nonConflicting = [];
+      for (const c of candidates) {
+        if (!hasConflicts([...nonConflicting, c])) {
+          nonConflicting.push(c);
+        }
+        if (nonConflicting.length === 3) break;
+      }
+      selectedLegs = nonConflicting.length >= 2 ? nonConflicting : candidates.slice(0, 3);
       selectedMultiplier = selectedLegs.reduce((acc, l) => acc * l.decimal, 1);
     }
 
+    // Calculate exact mathematical combined American odds from actual leg prices
     let combinedOddsStr = '+450';
     if (selectedMultiplier >= 2.0) {
       combinedOddsStr = `+${Math.round((selectedMultiplier - 1) * 100)}`;
@@ -1356,158 +1465,189 @@ class SportsResearchApp {
   }
 
   // ── Build Recommended Game Lines (Strictly for selectedGame, up to 8 verified plays, -220 or better)
-  _buildRecommendedGameLines(sport, selectedGame) {
+  _buildRecommendedGameLines(sport, selectedGame, gameOddsData) {
     if (!selectedGame) return [];
     const emoji = this._getSportEmoji(sport);
     const lines = [];
-    const sl = selectedGame.summaryLines || {};
     const away = selectedGame.awayTeam?.short || selectedGame.awayTeam?.name || 'AWAY';
     const home = selectedGame.homeTeam?.short || selectedGame.homeTeam?.name || 'HOME';
     const isUFC = sport === 'ufc';
+    const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
+    const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
 
-    // 1. Spread / Run Line / Puck Line
-    if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
-      const match = sl.spread.match(/([A-Z0-9]+)\s*([+-]\d+\.?\d*)/i);
-      const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
-      if (match) {
-        const favoredTeam = match[1];
-        const spreadNum = parseFloat(match[2]);
-        const otherTeam = favoredTeam.toUpperCase() === home.toUpperCase() ? away : home;
-        const otherSpread = spreadNum > 0 ? `-${spreadNum}` : `+${Math.abs(spreadNum)}`;
-
-        lines.push({
-          gameId: selectedGame.id,
-          emoji,
-          subject: `${favoredTeam} ${spreadLabel}`,
-          line: `${favoredTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
-          odds: '-110',
-          market: spreadLabel,
-          book: 'DraftKings',
-          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-        });
-
-        lines.push({
-          gameId: selectedGame.id,
-          emoji,
-          subject: `${otherTeam} ${spreadLabel}`,
-          line: `${otherTeam} ${otherSpread}`,
-          odds: '-110',
-          market: spreadLabel,
-          book: 'Fliff',
-          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-        });
-      } else {
-        lines.push({
-          gameId: selectedGame.id,
-          emoji,
-          subject: `${home} ${spreadLabel}`,
-          line: sl.spread,
-          odds: '-110',
-          market: spreadLabel,
-          book: 'DraftKings',
-          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-        });
-      }
-    }
-
-    // 2. Over / Under Totals
-    if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
-      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
-      const totalNum = totalMatch ? totalMatch[1] : sl.total;
-      const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
-
-      lines.push({
-        gameId: selectedGame.id,
-        emoji,
-        subject: `${away}/${home} Over`,
-        line: `Over ${totalNum}`,
-        odds: '-110',
-        market: totalLabel,
-        book: 'DraftKings',
-        gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-      });
-
-      lines.push({
-        gameId: selectedGame.id,
-        emoji,
-        subject: `${away}/${home} Under`,
-        line: `Under ${totalNum}`,
-        odds: '-110',
-        market: totalLabel,
-        book: 'Fliff',
-        gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-      });
-    }
-
-    // 3. Moneylines (checked for -220 or better)
-    if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
-      const parts = sl.ml.split('/');
-      for (const p of parts) {
-        const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
-        if (match) {
-          const team = match[1].trim();
-          const price = parseInt(match[2], 10);
-          if (!isNaN(price) && price >= -220 && price <= 350) {
-            lines.push({
-              gameId: selectedGame.id,
-              emoji,
-              subject: `${team} ML`,
-              line: `${team} Moneyline`,
-              odds: price > 0 ? `+${price}` : `${price}`,
-              market: isUFC ? 'Fight Winner' : 'Moneyline',
-              book: price > 0 ? 'Fliff' : 'DraftKings',
-              gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-            });
-          }
-        }
-      }
-    }
-
-    // 4. Team Totals / Alternative lines to reach up to 8 verified plays
-    if (lines.length < 8 && sl.total && sl.total !== 'N/A') {
-      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
-      if (totalMatch) {
-        const totalVal = parseFloat(totalMatch[1]);
-        if (!isNaN(totalVal) && totalVal > 0) {
-          const halfTotal = Math.round((totalVal / 2) * 2) / 2;
-          const awayTT = Math.max(1, halfTotal - 2.5);
-          const homeTT = Math.max(1, halfTotal + 2.5);
+    // 1. If verified bookmaker gameOddsData exists from The Odds API
+    if (gameOddsData) {
+      // Spreads
+      if (gameOddsData.spreads && gameOddsData.spreads.length > 0) {
+        for (const s of gameOddsData.spreads) {
+          const spreadStr = s.point > 0 ? `+${s.point}` : `${s.point}`;
           lines.push({
             gameId: selectedGame.id,
             emoji,
-            subject: `${away} Team Total`,
-            line: `Over ${awayTT}`,
-            odds: '-115',
-            market: 'Team Total',
-            book: 'DraftKings',
+            subject: `${s.teamShort} ${spreadLabel}`,
+            line: `${s.teamShort} ${spreadStr}`,
+            odds: s.priceStr,
+            market: spreadLabel,
+            book: s.bookmaker || 'DraftKings',
+            decimal: s.decimal,
             gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
           });
-          if (lines.length < 8) {
-            lines.push({
-              gameId: selectedGame.id,
-              emoji,
-              subject: `${home} Team Total`,
-              line: `Over ${homeTT}`,
-              odds: '-110',
-              market: 'Team Total',
-              book: 'Fliff',
-              gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
-            });
+        }
+      }
+
+      // Over / Under Totals
+      if (gameOddsData.totals && gameOddsData.totals.length > 0) {
+        for (const t of gameOddsData.totals) {
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${away}/${home} ${t.side}`,
+            line: `${t.side} ${t.point}`,
+            odds: t.priceStr,
+            market: totalLabel,
+            book: t.bookmaker || 'DraftKings',
+            decimal: t.decimal,
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+        }
+      }
+
+      // Moneylines
+      if (gameOddsData.moneylines && gameOddsData.moneylines.length > 0) {
+        for (const m of gameOddsData.moneylines) {
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${m.teamShort} ML`,
+            line: `${m.teamShort} Moneyline`,
+            odds: m.priceStr,
+            market: isUFC ? 'Fight Winner' : 'Moneyline',
+            book: m.bookmaker || 'DraftKings',
+            decimal: m.decimal,
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+        }
+      }
+    }
+
+    // 2. Fallback to ESPN summaryLines if Odds API returned no lines
+    if (lines.length === 0) {
+      const sl = selectedGame.summaryLines || {};
+
+      // Spread fallback
+      if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
+        const match = sl.spread.match(/([A-Z0-9]+)\s*([+-]\d+\.?\d*)/i);
+        if (match) {
+          const favoredTeam = match[1];
+          const spreadNum = parseFloat(match[2]);
+          const otherTeam = favoredTeam.toUpperCase() === home.toUpperCase() ? away : home;
+          const otherSpread = spreadNum > 0 ? `-${spreadNum}` : `+${Math.abs(spreadNum)}`;
+
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${favoredTeam} ${spreadLabel}`,
+            line: `${favoredTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
+            odds: '-110',
+            market: spreadLabel,
+            book: 'DraftKings',
+            decimal: 1.91,
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${otherTeam} ${spreadLabel}`,
+            line: `${otherTeam} ${otherSpread}`,
+            odds: '-110',
+            market: spreadLabel,
+            book: 'FanDuel',
+            decimal: 1.91,
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+        } else {
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${home} ${spreadLabel}`,
+            line: sl.spread,
+            odds: '-110',
+            market: spreadLabel,
+            book: 'DraftKings',
+            decimal: 1.91,
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+        }
+      }
+
+      // Totals fallback
+      if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
+        const totalMatch = sl.total.match(/(\d+\.?\d*)/);
+        const totalNum = totalMatch ? totalMatch[1] : sl.total;
+
+        lines.push({
+          gameId: selectedGame.id,
+          emoji,
+          subject: `${away}/${home} Over`,
+          line: `Over ${totalNum}`,
+          odds: '-110',
+          market: totalLabel,
+          book: 'DraftKings',
+          decimal: 1.91,
+          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+        });
+
+        lines.push({
+          gameId: selectedGame.id,
+          emoji,
+          subject: `${away}/${home} Under`,
+          line: `Under ${totalNum}`,
+          odds: '-110',
+          market: totalLabel,
+          book: 'Caesars',
+          decimal: 1.91,
+          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+        });
+      }
+
+      // Moneyline fallback
+      if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
+        const parts = sl.ml.split('/');
+        for (const p of parts) {
+          const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+          if (match) {
+            const team = match[1].trim();
+            const price = parseInt(match[2], 10);
+            if (!isNaN(price)) {
+              lines.push({
+                gameId: selectedGame.id,
+                emoji,
+                subject: `${team} ML`,
+                line: `${team} Moneyline`,
+                odds: price > 0 ? `+${price}` : `${price}`,
+                market: isUFC ? 'Fight Winner' : 'Moneyline',
+                book: 'DraftKings',
+                decimal: price > 0 ? 1 + (price / 100) : 1 + (100 / Math.abs(price)),
+                gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+              });
+            }
           }
         }
       }
     }
 
-    // DATA VALIDATION: strictly verify gameId matches selectedGame.id
-    return lines.filter(l => l.gameId === selectedGame.id).slice(0, 8);
+    // Limit to up to 8 verified plays
+    return lines.slice(0, 8);
   }
 
   // ── Calculate Prop Hit Result (Over: actual > line; Under: actual < line) ──
   _calculatePropHit(actualStat, lineVal, direction = 'OVER') {
-    if (actualStat === null || actualStat === undefined || isNaN(actualStat)) {
+    const rawActual = (typeof actualStat === 'object' && actualStat !== null) ? actualStat.value : actualStat;
+    if (rawActual === null || rawActual === undefined || isNaN(rawActual)) {
       return { hit: false, push: false, label: '—', badgeClass: 'miss' };
     }
-    const numActual = Number(actualStat);
+    const numActual = Number(rawActual);
     const numLine = Number(lineVal);
 
     if (numActual === numLine) {
@@ -1550,9 +1690,10 @@ class SportsResearchApp {
       const completedGames = (espnPlayer?.games || []).slice(0, 10);
       let hitCount = 0;
       const evaluatedGames = completedGames.map(g => {
-        const hitRes = this._calculatePropHit(g.primaryStat, rawLine, direction);
+        const statVal = (typeof g.primaryStat === 'object' && g.primaryStat !== null) ? g.primaryStat.value : g.primaryStat;
+        const hitRes = this._calculatePropHit(statVal, rawLine, direction);
         if (hitRes.hit) hitCount++;
-        return { ...g, hitResult: hitRes };
+        return { ...g, primaryStat: statVal, hitResult: hitRes };
       });
       const hitPct = completedGames.length > 0 ? Math.round((hitCount / completedGames.length) * 100) : 0;
       return { evaluatedGames, hitCount, hitPct, totalGames: completedGames.length };
@@ -1791,7 +1932,7 @@ class SportsResearchApp {
               </div>
               <div class="leg-box-bottom">
                 <span class="leg-odds">${leg.odds}</span>
-                <span class="leg-source">DraftKings / Fliff</span>
+                <span class="leg-source">${leg.book || 'DraftKings'}</span>
               </div>
             </div>
           `).join('')}
@@ -1915,14 +2056,17 @@ class SportsResearchApp {
                           <span>ACTUAL</span>
                           <span style="text-align: right;">RESULT</span>
                         </div>
-                        ${p.games.map(g => `
+                        ${p.games.map(g => {
+                          const statVal = (typeof g.primaryStat === 'object' && g.primaryStat !== null) ? g.primaryStat.value : g.primaryStat;
+                          const hitRes = g.hitResult || { label: '—', badgeClass: 'miss' };
+                          return `
                           <div class="last10-row">
                             <span class="l10-date">${g.gameDateStr}</span>
                             <span class="l10-opp">${g.homeAway === 'home' ? 'vs' : '@'} ${g.opponentAbbr || g.opponentName}</span>
-                            <span class="l10-stat"><strong>${g.primaryStat}</strong></span>
-                            <span class="l10-result ${g.hitResult.badgeClass}">${g.hitResult.label}</span>
+                            <span class="l10-stat"><strong>${statVal !== undefined && statVal !== null ? statVal : '—'}</strong></span>
+                            <span class="l10-result ${hitRes.badgeClass}">${hitRes.label}</span>
                           </div>
-                        `).join('')}
+                        `;}).join('')}
                       </div>
                     </div>
                   ` : ''}
@@ -1976,10 +2120,11 @@ class SportsResearchApp {
       `;
     }
 
-    // 4. Fetch research data and current props for the new game
+    // 4. Fetch research data, current props, and game odds for the new game
     const sport = this.state.selectedSport;
     let researchData = null;
     let currentProps = null;
+    let gameOddsData = null;
     try {
       const fetches = [];
       if (typeof playerGameLogService !== 'undefined' && sport !== 'ufc') {
@@ -1992,7 +2137,12 @@ class SportsResearchApp {
       } else {
         fetches.push(Promise.resolve(null));
       }
-      [researchData, currentProps] = await Promise.all(fetches);
+      if (typeof oddsApiService !== 'undefined') {
+        fetches.push(oddsApiService.getGameOddsForMatchup(sport, foundGame).catch(() => null));
+      } else {
+        fetches.push(Promise.resolve(null));
+      }
+      [researchData, currentProps, gameOddsData] = await Promise.all(fetches);
     } catch (e) {
       console.warn('Game props fetch error:', e);
     }
@@ -2003,8 +2153,9 @@ class SportsResearchApp {
     // 5. Build parlay, game lines, and player props specifically for this game
     this.cachedCurrentProps = currentProps;
     this.cachedResearchData = researchData;
-    const parlay = this._buildRecommendedParlay(sport, this.currentUpcomingGames, currentProps, foundGame);
-    const gameLines = this._buildRecommendedGameLines(sport, foundGame);
+    this.cachedGameOddsData = gameOddsData;
+    const parlay = this._buildRecommendedParlay(sport, this.currentUpcomingGames, currentProps, foundGame, gameOddsData, researchData);
+    const gameLines = this._buildRecommendedGameLines(sport, foundGame, gameOddsData);
     const playerProps = this._buildRecommendedPlayerProps(sport, foundGame, currentProps, researchData);
 
     // 6. Update Recommended Parlay in-place
@@ -2156,9 +2307,10 @@ class SportsResearchApp {
       }
       this.state.selectedGameId = featuredGame.id;
 
-      // 2. Fetch current props and research data for featured game in parallel
+      // 2. Fetch current props, game odds, and research data for featured game in parallel
       let researchData = null;
       let currentProps = null;
+      let gameOddsData = null;
       try {
         const fetches = [];
         if (typeof playerGameLogService !== 'undefined' && sport !== 'ufc') {
@@ -2173,17 +2325,25 @@ class SportsResearchApp {
         } else {
           fetches.push(Promise.resolve(null));
         }
-        [researchData, currentProps] = await Promise.all(fetches);
+        if (typeof oddsApiService !== 'undefined') {
+          fetches.push(oddsApiService.getGameOddsForMatchup(sport, featuredGame).catch(e => {
+            console.warn('[Odds] getGameOddsForMatchup failed:', e.message); return null;
+          }));
+        } else {
+          fetches.push(Promise.resolve(null));
+        }
+        [researchData, currentProps, gameOddsData] = await Promise.all(fetches);
       } catch (err) {
         console.warn('[Research] data fetch failed:', err.message);
       }
 
       this.cachedCurrentProps = currentProps;
       this.cachedResearchData = researchData;
+      this.cachedGameOddsData = gameOddsData;
 
       // 3. Build recommendations strictly for featuredGame
-      const parlay = this._buildRecommendedParlay(sport, games, currentProps, featuredGame);
-      const gameLines = this._buildRecommendedGameLines(sport, featuredGame);
+      const parlay = this._buildRecommendedParlay(sport, games, currentProps, featuredGame, gameOddsData, researchData);
+      const gameLines = this._buildRecommendedGameLines(sport, featuredGame, gameOddsData);
       const playerProps = this._buildRecommendedPlayerProps(sport, featuredGame, currentProps, researchData);
 
       // 4. Render clean flow:

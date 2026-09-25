@@ -176,6 +176,25 @@ export class OddsApiService {
     const oddsPort = ODDS_SPORT_MAP[sport];
     if (!oddsPort) { this._eventMappingCache.set(espnId, null); return null; }
 
+    // Fast path: if live odds are already cached for this sport, match from them
+    const cachedOdds = this._currentPropsCache.get(`odds_${sport}`);
+    if (cachedOdds && Array.isArray(cachedOdds.data)) {
+      const awayName  = espnGame.awayTeam?.name || '';
+      const homeName  = espnGame.homeTeam?.name || '';
+      const awayShort = espnGame.awayTeam?.short || '';
+      const homeShort = espnGame.homeTeam?.short || '';
+      for (const ev of cachedOdds.data) {
+        const awayMatch = this._teamsMatch(ev.away_team, awayName) || this._teamsMatch(ev.away_team, awayShort);
+        const homeMatch = this._teamsMatch(ev.home_team, homeName) || this._teamsMatch(ev.home_team, homeShort);
+        const swappedMatch = (this._teamsMatch(ev.away_team, homeName) || this._teamsMatch(ev.away_team, homeShort)) &&
+                             (this._teamsMatch(ev.home_team, awayName) || this._teamsMatch(ev.home_team, awayShort));
+        if ((awayMatch && homeMatch) || swappedMatch) {
+          this._eventMappingCache.set(espnId, ev.id);
+          return ev.id;
+        }
+      }
+    }
+
     // Fetch events from ~2 days around the game date to cover scheduling variance
     const gameDate = espnGame.rawDate ? new Date(espnGame.rawDate) : new Date();
     // Strictly sanitize: The Odds API rejects milliseconds (.000Z)
@@ -323,6 +342,162 @@ export class OddsApiService {
 
     this._currentPropsCache.set(cacheKey, { data: res.data, ts: Date.now() });
     return res.data;
+  }
+
+  // ── Match ESPN game to Odds API event and extract verified bookmaker game lines ──
+  async getGameOddsForMatchup(sport, espnGame) {
+    if (!espnGame) return null;
+    const allOdds = await this.getLiveGameOdds(sport);
+    if (!allOdds || !Array.isArray(allOdds) || allOdds.length === 0) return null;
+
+    const awayName  = espnGame.awayTeam?.name || '';
+    const homeName  = espnGame.homeTeam?.name || '';
+    const awayShort = espnGame.awayTeam?.short || '';
+    const homeShort = espnGame.homeTeam?.short || '';
+    const gameDate = espnGame.rawDate ? new Date(espnGame.rawDate) : null;
+    const gameDateStr = gameDate && !isNaN(gameDate.getTime()) ? gameDate.toISOString().split('T')[0] : null;
+
+    let matchedEv = null;
+
+    // 1. Try team match with date proximity
+    for (const ev of allOdds) {
+      const evDate = (ev.commence_time || '').split('T')[0];
+      const awayMatch = this._teamsMatch(ev.away_team, awayName) || this._teamsMatch(ev.away_team, awayShort);
+      const homeMatch = this._teamsMatch(ev.home_team, homeName) || this._teamsMatch(ev.home_team, homeShort);
+      const swappedMatch = (this._teamsMatch(ev.away_team, homeName) || this._teamsMatch(ev.away_team, homeShort)) &&
+                           (this._teamsMatch(ev.home_team, awayName) || this._teamsMatch(ev.home_team, awayShort));
+
+      const isTeamsMatch = (awayMatch && homeMatch) || swappedMatch;
+      if (isTeamsMatch) {
+        if (!gameDateStr || evDate === gameDateStr) {
+          matchedEv = ev;
+          break;
+        }
+        const diff = Math.abs(new Date(evDate) - new Date(gameDateStr));
+        if (diff <= 2 * 86400000) {
+          matchedEv = ev;
+          break;
+        }
+      }
+    }
+
+    // 2. Fallback: match by team names
+    if (!matchedEv) {
+      for (const ev of allOdds) {
+        const awayMatch = this._teamsMatch(ev.away_team, awayName) || this._teamsMatch(ev.away_team, awayShort);
+        const homeMatch = this._teamsMatch(ev.home_team, homeName) || this._teamsMatch(ev.home_team, homeShort);
+        const swappedMatch = (this._teamsMatch(ev.away_team, homeName) || this._teamsMatch(ev.away_team, homeShort)) &&
+                             (this._teamsMatch(ev.home_team, awayName) || this._teamsMatch(ev.home_team, awayShort));
+        if ((awayMatch && homeMatch) || swappedMatch) {
+          matchedEv = ev;
+          break;
+        }
+      }
+    }
+
+    if (!matchedEv || !matchedEv.bookmakers || matchedEv.bookmakers.length === 0) return null;
+
+    // Cache event mapping so getCurrentProps doesn't have to re-fetch
+    const espnId = espnGame.rawEventId || espnGame.id;
+    if (espnId) {
+      this._eventMappingCache.set(espnId, matchedEv.id);
+    }
+
+    const preferredBooks = ['DraftKings', 'FanDuel', 'Caesars', 'BetMGM', 'BetRivers', 'Bovada', 'BetOnline.ag'];
+    const sortedBms = [...matchedEv.bookmakers].sort((a, b) => {
+      const idxA = preferredBooks.indexOf(a.title);
+      const idxB = preferredBooks.indexOf(b.title);
+      const orderA = idxA === -1 ? 999 : idxA;
+      const orderB = idxB === -1 ? 999 : idxB;
+      return orderA - orderB;
+    });
+
+    const spreads = [];
+    const totals = [];
+    const moneylines = [];
+
+    const toDecimal = (american) => {
+      const p = Number(american);
+      if (isNaN(p) || p === 0) return 1.91;
+      return p > 0 ? 1 + (p / 100) : 1 + (100 / Math.abs(p));
+    };
+
+    const fmtOdds = (p) => {
+      const n = Number(p);
+      if (isNaN(n)) return '';
+      return n > 0 ? `+${n}` : `${n}`;
+    };
+
+    for (const bm of sortedBms) {
+      const bmTitle = bm.title || 'DraftKings';
+      for (const m of (bm.markets || [])) {
+        if (m.key === 'spreads') {
+          for (const out of (m.outcomes || [])) {
+            if (out.point !== undefined && out.price !== undefined) {
+              const isHome = this._teamsMatch(out.name, homeName) || this._teamsMatch(out.name, homeShort);
+              const teamShort = isHome ? (homeShort || homeName) : (awayShort || awayName);
+              const exists = spreads.some(s => s.isHome === isHome);
+              if (!exists) {
+                spreads.push({
+                  team: out.name,
+                  teamShort,
+                  isHome,
+                  point: out.point,
+                  price: out.price,
+                  priceStr: fmtOdds(out.price),
+                  decimal: toDecimal(out.price),
+                  bookmaker: bmTitle
+                });
+              }
+            }
+          }
+        } else if (m.key === 'totals') {
+          for (const out of (m.outcomes || [])) {
+            if (out.point !== undefined && out.price !== undefined) {
+              const side = (out.name || '').toLowerCase() === 'over' ? 'Over' : 'Under';
+              const exists = totals.some(t => t.side === side);
+              if (!exists) {
+                totals.push({
+                  side,
+                  point: out.point,
+                  price: out.price,
+                  priceStr: fmtOdds(out.price),
+                  decimal: toDecimal(out.price),
+                  bookmaker: bmTitle
+                });
+              }
+            }
+          }
+        } else if (m.key === 'h2h') {
+          for (const out of (m.outcomes || [])) {
+            if (out.price !== undefined) {
+              const isHome = this._teamsMatch(out.name, homeName) || this._teamsMatch(out.name, homeShort);
+              const teamShort = isHome ? (homeShort || homeName) : (awayShort || awayName);
+              const exists = moneylines.some(ml => ml.isHome === isHome);
+              if (!exists) {
+                moneylines.push({
+                  team: out.name,
+                  teamShort,
+                  isHome,
+                  price: out.price,
+                  priceStr: fmtOdds(out.price),
+                  decimal: toDecimal(out.price),
+                  bookmaker: bmTitle
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      eventId: matchedEv.id,
+      spreads,
+      totals,
+      moneylines,
+      bookmakers: sortedBms.map(b => b.title)
+    };
   }
 
   // ── Get historical props for a completed game ─────────────────────────────
