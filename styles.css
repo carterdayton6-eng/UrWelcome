@@ -4957,3 +4957,221 @@ body {
     padding: 9px 12px !important;
   }
 }
+
+
+/* ── Seamless League Switcher & In-Place Loaders ─────────────────────────── */
+.in-place-sport-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+  gap: 12px;
+}
+
+.sport-switch-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(56, 189, 248, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sport-switch-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.game-switch-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+/* ── Player Props Compact Cards & Last 10 Expansion ──────────────────────── */
+.prop-book-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.prop-tap-hint {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f5b920;
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(245, 185, 32, 0.2);
+  margin-top: 2px;
+}
+
+.player-prop-card.expanded {
+  border-color: #f5b920 !important;
+  background: #152033 !important;
+}
+
+.player-prop-card.expanded .prop-tap-hint {
+  color: #94a3b8 !important;
+  border-top-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.prop-expanded-research {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(245, 185, 32, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prop-research-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prs-hit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.prs-hit-badge.high {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.prs-hit-badge.mid {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.prs-hit-badge.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.prs-subtext {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.prop-last10-table {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: #0d1422;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.last10-row {
+  display: grid;
+  grid-template-columns: 75px 65px 1fr 50px;
+  align-items: center;
+  font-size: 11px;
+  color: #cbd5e1;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.last10-row.header {
+  font-size: 9px;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #334155;
+  padding-bottom: 3px;
+}
+
+.last10-row:last-child {
+  border-bottom: none;
+}
+
+.l10-date {
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.l10-opp {
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.l10-stat {
+  color: #e2e8f0;
+}
+
+.l10-stat strong {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.l10-result {
+  text-align: right;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.l10-result.hit {
+  color: #4ade80;
+}
+
+.l10-result.miss {
+  color: #f87171;
+}
+
+.l10-result.push {
+  color: #fbbf24;
+}
+
+.empty-props-box {
+  padding: 16px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  background: #141c2b;
+  border: 1px dashed #27364f;
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 480px) {
+  .player-props-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -1671,41 +1671,61 @@ export class PlayerGameLogService {
     const events = data.events || [];
     const completed = [];
 
-    for (const ev of events) {
-      const comp = (ev.competitions || [])[0];
-      if (!comp) continue;
-      const statusName = comp.status?.type?.name || '';
-      if (statusName !== 'STATUS_FINAL') continue;
+    const parseCompletedEvents = (evList) => {
+      const out = [];
+      for (const ev of evList) {
+        const comp = (ev.competitions || [])[0];
+        if (!comp) continue;
+        const statusName = comp.status?.type?.name || '';
+        if (statusName !== 'STATUS_FINAL') continue;
 
-      const eventId = ev.id;
-      const gameDate = ev.date ? new Date(ev.date) : null;
-      if (!eventId || !gameDate) continue;
+        const eventId = ev.id;
+        const gameDate = ev.date ? new Date(ev.date) : null;
+        if (!eventId || !gameDate) continue;
 
-      // Find opponent
-      const comps = comp.competitors || [];
-      const myComp = comps.find(c => c.team?.id === String(teamId));
-      const oppComp = comps.find(c => c.team?.id !== String(teamId));
+        const comps = comp.competitors || [];
+        const myComp = comps.find(c => c.team?.id === String(teamId));
+        const oppComp = comps.find(c => c.team?.id !== String(teamId));
 
-      completed.push({
-        eventId,
-        gameDate,
-        gameDateStr: this._formatDate(gameDate),
-        teamId: String(teamId),
-        teamAbbr: myComp?.team?.abbreviation || '',
-        homeAway: myComp?.homeAway || 'unknown',
-        opponentName: oppComp?.team?.displayName || oppComp?.team?.abbreviation || 'Unknown',
-        opponentAbbr: oppComp?.team?.abbreviation || '',
-        score: (() => {
-        const _s = (c) => {
-          if (!c) return '?';
-          const v = c.score;
-          if (v === null || v === undefined) return '?';
-          if (typeof v === 'object') return v.displayValue || String(Math.round(v.value || 0));
-          return String(v);
-        };
-        return `${_s(myComp)}-${_s(oppComp)}`;
-      })(),
-      });
+        out.push({
+          eventId,
+          gameDate,
+          gameDateStr: this._formatDate(gameDate),
+          teamId: String(teamId),
+          teamAbbr: myComp?.team?.abbreviation || '',
+          homeAway: myComp?.homeAway || 'unknown',
+          opponentName: oppComp?.team?.displayName || oppComp?.team?.abbreviation || 'Unknown',
+          opponentAbbr: oppComp?.team?.abbreviation || '',
+          score: (() => {
+            const _s = (c) => {
+              if (!c) return '?';
+              const v = c.score;
+              if (v === null || v === undefined) return '?';
+              if (typeof v === 'object') return v.displayValue || String(Math.round(v.value || 0));
+              return String(v);
+            };
+            return `${_s(myComp)}-${_s(oppComp)}`;
+          })(),
+        });
+      }
+      return out;
+    };
+
+    completed.push(...parseCompletedEvents(events));
+
+    // If fewer than limit games completed in current season, query previous season
+    const seasonYear = data.season?.year || (new Date()).getFullYear();
+    if (completed.length < limit && seasonYear) {
+      try {
+        const prevUrl = `${url}?season=${seasonYear - 1}`;
+        const prevData = await this._fetch(prevUrl);
+        if (prevData && prevData.events) {
+          const prevCompleted = parseCompletedEvents(prevData.events);
+          completed.push(...prevCompleted);
+        }
+      } catch (err) {
+        console.warn(`[PlayerGameLogService] previous season schedule fetch failed:`, err.message);
+      }
     }
 
     // Sort descending by date (most recent first)
@@ -1806,6 +1826,11 @@ export class PlayerGameLogService {
   _formatDate(d) {
     if (!d) return '';
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const currentYear = (new Date()).getFullYear();
+    const gameYear = d.getFullYear ? d.getFullYear() : null;
+    if (gameYear && gameYear < currentYear) {
+      return `${months[d.getMonth()]} ${d.getDate()} '${String(gameYear).slice(2)}`;
+    }
     return `${months[d.getMonth()]} ${d.getDate()}`;
   }
 

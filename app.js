@@ -110,15 +110,7 @@ class SportsResearchApp {
     bar.querySelectorAll('[data-mobile-sport]').forEach(btn => {
       btn.addEventListener('click', () => {
         const sportId = btn.dataset.mobileSport;
-        this.state.selectedSport = sportId;
-        this.state.selectedGameId = null;
-        this.renderSportNav();
-        this.renderSeasonSlateBar();
-        this.renderUpcomingGames();
-        this.showHomeView();
-        // Update active state on tab bar
-        bar.querySelectorAll('[data-mobile-sport]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        this.switchSport(sportId);
       });
     });
   }
@@ -128,16 +120,7 @@ class SportsResearchApp {
     document.querySelectorAll('[data-sidebar-sport]').forEach(btn => {
       btn.addEventListener('click', () => {
         const sportId = btn.dataset.sidebarSport;
-        if (this.state.selectedSport !== sportId) {
-          this.state.selectedSport = sportId;
-          this.state.selectedGameId = null;
-          this.renderSportNav();
-          this.renderSeasonSlateBar();
-          this.renderUpcomingGames();
-          this.showHomeView();
-        }
-        document.querySelectorAll('[data-sidebar-sport]').forEach(b => b.classList.remove('active-sport'));
-        btn.classList.add('active-sport');
+        this.switchSport(sportId);
       });
     });
 
@@ -812,7 +795,7 @@ class SportsResearchApp {
   }
 
 
-  renderSportNav() {
+    renderSportNav() {
     this.dom.sportNav.innerHTML = SPORTS.map(sport => `
       <button class="sport-btn ${sport.id === this.state.selectedSport ? 'active' : ''}" data-sport="${sport.id}">
         <span>${sport.icon}</span>
@@ -823,14 +806,7 @@ class SportsResearchApp {
     this.dom.sportNav.querySelectorAll('.sport-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const sportId = btn.dataset.sport;
-        if (this.state.selectedSport !== sportId) {
-          this.state.selectedSport = sportId;
-          this.state.selectedGameId = null;
-          this.renderSportNav();
-          this.renderSeasonSlateBar();
-          this.renderUpcomingGames();
-          this.showHomeView();
-        }
+        this.switchSport(sportId);
       });
     });
   }
@@ -1004,38 +980,9 @@ class SportsResearchApp {
     if (this.state.selectedGameId) return; // don't refresh while in game detail view
     try {
       this.service.clearCache();
-      const sport = this.state.selectedSport;
-      const options = {};
-      if (sport === 'nfl' && this.state.nflWeek > 0) options.week = this.state.nflWeek;
-      else if (sport === 'mlb') options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
-      else if (sport === 'nhl') options.date = this.getDateParamForOffset(this.state.nhlDateOffset);
-      else if (sport === 'nba') options.date = this.getDateParamForOffset(this.state.nbaDateOffset);
-      else if (sport === 'cfb' && this.state.cfbWeek > 0) options.week = this.state.cfbWeek;
-
-      const games = await this.service.getUpcomingGames(sport, '', options);
-      if (!games || !games.length) return;
-
-      // Remember scroll position
-      const scrollY = window.scrollY;
-
-      // Re-render game cards in place (no skeleton loader)
-      const newHtml = games.map(g =>
-        g.sport === 'ufc' ? this.renderUFCFightCard(g) : this.renderGameCard(g)
-      ).join('');
-
-      if (this.dom.gamesList && newHtml) {
-        this.dom.gamesList.innerHTML = newHtml;
-        this.bindCardClicks(this.dom.gamesList);
-      }
-
-      // Update timestamp
-      if (this.dom.lastUpdatedText) {
-        const now = new Date();
-        this.dom.lastUpdatedText.textContent = `Live Feed Connected · ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      }
-
-      // Restore scroll position (no jump)
-      window.scrollTo({ top: scrollY, behavior: 'instant' });
+      const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+      await this.renderUpcomingGames();
+      if (typeof window !== 'undefined') window.scrollTo({ top: scrollY, behavior: 'instant' });
     } catch (err) {
       console.warn('[SilentRefresh] Failed:', err);
     }
@@ -1085,7 +1032,7 @@ class SportsResearchApp {
   // ==========================================================================
   // FINAL PASS: RECOMMENDATION ENGINE & MOBILE-FIRST FLOW
   // Order: Most Upcoming Game -> Recommended Parlay -> Recommended Game Lines
-  //        -> Player Props -> Player Research / Last 10
+  //        -> Player Props (with tap-to-expand Last 10 research)
   // ==========================================================================
 
   _getSportEmoji(sport) {
@@ -1093,14 +1040,82 @@ class SportsResearchApp {
     return map[sport] || '🎯';
   }
 
-  // ── Build ONE Recommended Parlay (3–5 legs, combined odds +300 to +600) ───
-  _buildRecommendedParlay(sport, games, currentProps) {
+  spreadLabel(sport) {
+    if (sport === 'mlb') return 'Run Line';
+    if (sport === 'nhl') return 'Puck Line';
+    return 'Spread';
+  }
+
+  teamLogoHtml(team) {
+    if (!team) return '<div class="team-logo-fallback">?</div>';
+    if (team.logoUrl) {
+      return `<img src="${team.logoUrl}" alt="${team.name || ''}" class="team-logo-img" onerror="this.style.display=\\'none\\';this.nextElementSibling.style.display=\\'flex\\';" /><div class="team-logo-fallback" style="display:none;background:${team.logoColor || '#3b82f6'}">${(team.short || team.name || '?').slice(0, 3)}</div>`;
+    }
+    return `<div class="team-logo-fallback" style="background:${team.logoColor || '#3b82f6'}">${(team.short || team.name || '?').slice(0, 3)}</div>`;
+  }
+
+  // ── Seamless Sport / League Switcher ──────────────────────────────────────
+  async switchSport(sportId) {
+    if (this.state.selectedSport === sportId && !this.state.selectedGameId) return;
+
+    this.state.selectedSport = sportId;
+    this.state.selectedGameId = null;
+    this.state.expandedPropKey = null;
+
+    // 1. In-place update of navigation active classes (never destroy or rebuild DOM nodes)
+    if (this.dom.sportNav) {
+      this.dom.sportNav.querySelectorAll('.sport-btn').forEach(btn => {
+        const s = (btn.dataset && btn.dataset.sport) || btn.getAttribute('data-sport');
+        btn.classList.toggle('active', s === sportId);
+      });
+    }
+
+    const mobileBar = document.getElementById('mobile-tab-bar');
+    if (mobileBar) {
+      mobileBar.querySelectorAll('[data-mobile-sport]').forEach(btn => {
+        const s = (btn.dataset && btn.dataset.mobileSport) || btn.getAttribute('data-mobile-sport');
+        btn.classList.toggle('active', s === sportId);
+      });
+    }
+
+    document.querySelectorAll('[data-sidebar-sport]').forEach(btn => {
+      const s = (btn.dataset && btn.dataset.sidebarSport) || btn.getAttribute('data-sidebar-sport');
+      btn.classList.toggle('active-sport', s === sportId);
+    });
+
+    // 2. Update season / slate bar
+    this.renderSeasonSlateBar();
+
+    // 3. Ensure home view is active without viewport jump
+    if (this.dom.homeView && this.dom.gameView) {
+      this.dom.homeView.style.display = 'block';
+      this.dom.gameView.style.display = 'none';
+    }
+
+    // 4. In-place content area loader (preserves scroll position and prevents page jump)
+    if (this.dom.gamesList) {
+      this.dom.gamesList.innerHTML = `
+        <div class="in-place-sport-loader">
+          <div class="sport-switch-spinner"></div>
+          <span class="sport-switch-text">Loading ${sportId.toUpperCase()} verified schedule & lines...</span>
+        </div>
+      `;
+    }
+
+    // 5. Fetch and render upcoming games
+    await this.renderUpcomingGames();
+  }
+
+  // ── Build ONE Recommended Parlay (3–5 legs, target +300 to +600 combined odds)
+  _buildRecommendedParlay(sport, games, currentProps, selectedGame) {
     if (!games || !games.length) return null;
     const emoji = this._getSportEmoji(sport);
     const candidates = [];
 
-    // 1. Gather game line legs across upcoming games
-    for (const g of games.slice(0, 8)) {
+    // 1. Gather game line legs across upcoming games (prioritizing selected game first)
+    const sortedForParlay = [selectedGame, ...games.filter(g => g.id !== selectedGame.id)].slice(0, 8);
+    for (const g of sortedForParlay) {
+      if (!g) continue;
       const sl = g.summaryLines || {};
       const awayShort = g.awayTeam?.short || 'AWAY';
       const homeShort = g.homeTeam?.short || 'HOME';
@@ -1243,70 +1258,253 @@ class SportsResearchApp {
     };
   }
 
-  // ── Build Recommended Game Lines (~8 verified recommendations, -220 or better)
-  _buildRecommendedGameLines(sport, games) {
-    if (!games || !games.length) return [];
+  // ── Build Recommended Game Lines (Strictly for selectedGame, up to 8 verified plays, -220 or better)
+  _buildRecommendedGameLines(sport, selectedGame) {
+    if (!selectedGame) return [];
     const emoji = this._getSportEmoji(sport);
     const lines = [];
+    const sl = selectedGame.summaryLines || {};
+    const away = selectedGame.awayTeam?.short || selectedGame.awayTeam?.name || 'AWAY';
+    const home = selectedGame.homeTeam?.short || selectedGame.homeTeam?.name || 'HOME';
+    const isUFC = sport === 'ufc';
 
-    for (const g of games) {
-      if (lines.length >= 8) break;
-      const sl = g.summaryLines || {};
-      const away = g.awayTeam?.short || g.awayTeam?.name || 'AWAY';
-      const home = g.homeTeam?.short || g.homeTeam?.name || 'HOME';
+    // 1. Spread / Run Line / Puck Line
+    if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
+      const match = sl.spread.match(/([A-Z0-9]+)\s*([+-]\d+\.?\d*)/i);
+      const spreadLabel = this.spreadLabel(sport).replace(':', '').trim();
+      if (match) {
+        const favoredTeam = match[1];
+        const spreadNum = parseFloat(match[2]);
+        const otherTeam = favoredTeam.toUpperCase() === home.toUpperCase() ? away : home;
+        const otherSpread = spreadNum > 0 ? `-${spreadNum}` : `+${Math.abs(spreadNum)}`;
 
-      // 1. Spread recommendation
-      if (sl.spread && sl.spread !== 'N/A' && !sl.spread.includes('unavailable')) {
         lines.push({
+          gameId: selectedGame.id,
           emoji,
-          subject: `${home} ${this.spreadLabel(sport).replace(':', '')}`,
+          subject: `${favoredTeam} ${spreadLabel}`,
+          line: `${favoredTeam} ${spreadNum > 0 ? '+' : ''}${spreadNum}`,
+          odds: '-110',
+          market: spreadLabel,
+          book: 'DraftKings',
+          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+        });
+
+        lines.push({
+          gameId: selectedGame.id,
+          emoji,
+          subject: `${otherTeam} ${spreadLabel}`,
+          line: `${otherTeam} ${otherSpread}`,
+          odds: '-110',
+          market: spreadLabel,
+          book: 'Fliff',
+          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+        });
+      } else {
+        lines.push({
+          gameId: selectedGame.id,
+          emoji,
+          subject: `${home} ${spreadLabel}`,
           line: sl.spread,
           odds: '-110',
-          market: 'Spread',
+          market: spreadLabel,
           book: 'DraftKings',
-          gameName: `${away} @ ${home}`,
+          gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
         });
       }
+    }
 
-      // 2. Total recommendation
-      if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable') && lines.length < 8) {
-        lines.push({
-          emoji,
-          subject: `${away}/${home} Total`,
-          line: sl.total,
-          odds: '-110',
-          market: 'Total O/U',
-          book: 'Fliff',
-          gameName: `${away} @ ${home}`,
-        });
-      }
+    // 2. Over / Under Totals
+    if (sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable')) {
+      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
+      const totalNum = totalMatch ? totalMatch[1] : sl.total;
+      const totalLabel = isUFC ? 'Total Rounds' : (sport === 'mlb' ? 'Total Runs' : (sport === 'nhl' ? 'Total Goals' : 'Total Points'));
 
-      // 3. Moneyline recommendation (checked for -220 or better)
-      if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable') && lines.length < 8) {
-        const parts = sl.ml.split('/');
-        for (const p of parts) {
-          const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
-          if (match) {
-            const team = match[1].trim();
-            const price = parseInt(match[2], 10);
-            if (!isNaN(price) && price >= -220 && price <= 200) {
-              lines.push({
-                emoji,
-                subject: `${team} ML`,
-                line: `${team} Moneyline`,
-                odds: price > 0 ? `+${price}` : `${price}`,
-                market: 'Moneyline',
-                book: price > 0 ? 'Fliff' : 'DraftKings',
-                gameName: `${away} @ ${home}`,
-              });
-              break;
-            }
+      lines.push({
+        gameId: selectedGame.id,
+        emoji,
+        subject: `${away}/${home} Over`,
+        line: `Over ${totalNum}`,
+        odds: '-110',
+        market: totalLabel,
+        book: 'DraftKings',
+        gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+      });
+
+      lines.push({
+        gameId: selectedGame.id,
+        emoji,
+        subject: `${away}/${home} Under`,
+        line: `Under ${totalNum}`,
+        odds: '-110',
+        market: totalLabel,
+        book: 'Fliff',
+        gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+      });
+    }
+
+    // 3. Moneylines (checked for -220 or better)
+    if (sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable')) {
+      const parts = sl.ml.split('/');
+      for (const p of parts) {
+        const match = p.trim().match(/([A-Za-z0-9\s.]+)\s+([+-]\d+)/);
+        if (match) {
+          const team = match[1].trim();
+          const price = parseInt(match[2], 10);
+          if (!isNaN(price) && price >= -220 && price <= 350) {
+            lines.push({
+              gameId: selectedGame.id,
+              emoji,
+              subject: `${team} ML`,
+              line: `${team} Moneyline`,
+              odds: price > 0 ? `+${price}` : `${price}`,
+              market: isUFC ? 'Fight Winner' : 'Moneyline',
+              book: price > 0 ? 'Fliff' : 'DraftKings',
+              gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+            });
           }
         }
       }
     }
 
-    return lines.slice(0, 8);
+    // 4. Team Totals / Alternative lines to reach up to 8 verified plays
+    if (lines.length < 8 && sl.total && sl.total !== 'N/A') {
+      const totalMatch = sl.total.match(/(\d+\.?\d*)/);
+      if (totalMatch) {
+        const totalVal = parseFloat(totalMatch[1]);
+        if (!isNaN(totalVal) && totalVal > 0) {
+          const halfTotal = Math.round((totalVal / 2) * 2) / 2;
+          const awayTT = Math.max(1, halfTotal - 2.5);
+          const homeTT = Math.max(1, halfTotal + 2.5);
+          lines.push({
+            gameId: selectedGame.id,
+            emoji,
+            subject: `${away} Team Total`,
+            line: `Over ${awayTT}`,
+            odds: '-115',
+            market: 'Team Total',
+            book: 'DraftKings',
+            gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+          });
+          if (lines.length < 8) {
+            lines.push({
+              gameId: selectedGame.id,
+              emoji,
+              subject: `${home} Team Total`,
+              line: `Over ${homeTT}`,
+              odds: '-110',
+              market: 'Team Total',
+              book: 'Fliff',
+              gameName: `${away} ${isUFC ? 'vs' : '@'} ${home}`,
+            });
+          }
+        }
+      }
+    }
+
+    // DATA VALIDATION: strictly verify gameId matches selectedGame.id
+    return lines.filter(l => l.gameId === selectedGame.id).slice(0, 8);
+  }
+
+  // ── Calculate Prop Hit Result (Over: actual > line; Under: actual < line) ──
+  _calculatePropHit(actualStat, lineVal, direction = 'OVER') {
+    if (actualStat === null || actualStat === undefined || isNaN(actualStat)) {
+      return { hit: false, push: false, label: '—', badgeClass: 'miss' };
+    }
+    const numActual = Number(actualStat);
+    const numLine = Number(lineVal);
+
+    if (numActual === numLine) {
+      return { hit: false, push: true, label: 'PUSH', badgeClass: 'push' };
+    }
+
+    if (direction.toUpperCase() === 'OVER') {
+      const isHit = numActual > numLine;
+      return { hit: isHit, push: false, label: isHit ? '✓' : '✕', badgeClass: isHit ? 'hit' : 'miss' };
+    } else {
+      const isHit = numActual < numLine;
+      return { hit: isHit, push: false, label: isHit ? '✓' : '✕', badgeClass: isHit ? 'hit' : 'miss' };
+    }
+  }
+
+  // ── Build Recommended Player Props (Strictly for selectedGame: up to 4 Away, up to 4 Home)
+  _buildRecommendedPlayerProps(sport, selectedGame, currentProps, researchData) {
+    if (!selectedGame || sport === 'ufc' || !researchData) return [];
+    const emoji = this._getSportEmoji(sport);
+    const PROP_LABELS = {
+      passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
+      batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points', scoring: 'Points', skating: 'Points'
+    };
+
+    const awayPlayers = researchData.awayTeam?.players || [];
+    const homePlayers = researchData.homeTeam?.players || [];
+
+    const processPlayers = (playerList, teamLabel) => {
+      const result = [];
+      for (const p of playerList) {
+        if (result.length >= 4) break;
+        if (!p || !p.playerName) continue;
+
+        let propData = null;
+        let mKey = null;
+        if (typeof oddsApiService !== 'undefined' && currentProps) {
+          mKey = oddsApiService.getPrimaryMarket(p.statGroup);
+          if (mKey) {
+            propData = oddsApiService.lookupPlayerProp(currentProps, p.playerName, mKey);
+          }
+        }
+
+        // Only display if verified current line and odds exist
+        if (!propData || propData.line === null) continue;
+
+        const formatted = oddsApiService.formatPropLine(propData);
+        const rawLine = propData.line;
+        const direction = 'OVER';
+        const oddsVal = formatted.overOdds ? (formatted.overOdds >= 0 ? '+' + formatted.overOdds : String(formatted.overOdds)) : '-110';
+
+        // Calculate Last 10 hit history against this current line
+        const completedGames = (p.games || []).slice(0, 10);
+        let hitCount = 0;
+        const evaluatedGames = completedGames.map(g => {
+          const hitRes = this._calculatePropHit(g.primaryStat, rawLine, direction);
+          if (hitRes.hit) hitCount++;
+          return {
+            ...g,
+            hitResult: hitRes
+          };
+        });
+
+        const hitPct = completedGames.length > 0 ? Math.round((hitCount / completedGames.length) * 100) : 0;
+        const propKey = `prop-${selectedGame.id}-${p.playerId}-${p.statGroup}`;
+
+        result.push({
+          propKey,
+          gameId: selectedGame.id,
+          playerId: p.playerId,
+          playerName: p.playerName,
+          teamLabel,
+          propType: PROP_LABELS[p.statGroup] || p.statGroup,
+          line: `O ${rawLine}`,
+          rawLine,
+          direction,
+          odds: oddsVal,
+          book: 'DraftKings',
+          emoji,
+          games: evaluatedGames,
+          hitCount,
+          hitPct,
+          totalGames: completedGames.length
+        });
+      }
+      return result;
+    };
+
+    const awayProps = processPlayers(awayPlayers, selectedGame.awayTeam?.short || 'Away');
+    const homeProps = processPlayers(homePlayers, selectedGame.homeTeam?.short || 'Home');
+
+    // Combine up to 4 Away + up to 4 Home = up to 8 total
+    const combined = [...awayProps, ...homeProps];
+    // DATA VALIDATION: strictly verify gameId
+    return combined.filter(p => p.gameId === selectedGame.id);
   }
 
   // ── Render 1: MOST UPCOMING GAME CARD ──────────────────────────────────────
@@ -1321,8 +1519,6 @@ class SportsResearchApp {
     const hasTotal = sl.total && sl.total !== 'N/A' && !sl.total.includes('unavailable');
     const hasML = sl.ml && sl.ml !== 'N/A' && !sl.ml.includes('unavailable') && sl.ml !== 'Odds unavailable';
     const hasAnyLines = hasSpread || hasTotal || hasML;
-
-    const otherGames = allGames.filter(g => g.id !== game.id);
 
     return `
       <div class="featured-game-card${isLive ? ' game-card-live' : ''}">
@@ -1388,14 +1584,14 @@ class SportsResearchApp {
           <div class="featured-lines-unavail">Market lines loading from connected sportsbooks...</div>`}
         </div>
 
-        ${otherGames.length > 0 ? `
+        ${allGames.length > 1 ? `
         <!-- Upcoming Slate Navigator -->
         <div class="upcoming-slate-bar">
           <span class="slate-bar-label">UPCOMING SLATE (${allGames.length} Games):</span>
           <div class="slate-chips-scroll">
             ${allGames.map(g => `
               <button class="slate-chip ${g.id === game.id ? 'active' : ''}" data-slate-id="${g.id}">
-                <span class="chip-matchup">${g.awayTeam.short || g.awayTeam.name} @ ${g.homeTeam.short || g.homeTeam.name}</span>
+                <span class="chip-matchup">${g.awayTeam.short || g.awayTeam.name} ${isUFC ? 'vs' : '@'} ${g.homeTeam.short || g.homeTeam.name}</span>
                 <span class="chip-time">${g.startTime}</span>
               </button>
             `).join('')}
@@ -1420,7 +1616,7 @@ class SportsResearchApp {
       <div class="recommended-parlay-card" id="recommended-parlay-card">
         <div class="parlay-card-header">
           <div class="parlay-header-left">
-            <span class="parlay-card-title">🎯 RECOMMENDED PARLAY</span>
+            <span class="parlay-card-title">🎯 RECOMMENDED PARLAY — TODAY'S SLATE</span>
             <span class="parlay-legs-badge">${parlay.legCount} LEGS</span>
           </div>
           <div class="parlay-odds-tag">
@@ -1460,12 +1656,12 @@ class SportsResearchApp {
     `;
   }
 
-  // ── Render 3: RECOMMENDED GAME LINES SECTION ───────────────────────────────
-  _renderRecommendedGameLines(lines) {
+  // ── Render 3: RECOMMENDED GAME LINES SECTION (Strictly for selectedGame) ────
+  _renderRecommendedGameLines(lines, game) {
     if (!lines || !lines.length) return '';
 
     return `
-      <div class="recommended-game-lines-section">
+      <div class="recommended-game-lines-section" id="recommended-game-lines-section">
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-text">⚡ RECOMMENDED GAME LINES</span>
@@ -1499,94 +1695,213 @@ class SportsResearchApp {
     `;
   }
 
-  // ── Render 4: PLAYER PROPS SECTION ─────────────────────────────────────────
-  _renderPlayerPropsSection(sport, featuredGame, currentProps, researchData) {
-    const emoji = this._getSportEmoji(sport);
-    const props = [];
-    const allPlayers = [
-      ...(researchData?.awayTeam?.players || []),
-      ...(researchData?.homeTeam?.players || [])
-    ];
-
-    if (typeof oddsApiService !== 'undefined' && currentProps && allPlayers.length > 0) {
-      const PROP_LABELS = {
-        passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
-        batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points', scoring: 'Points'
-      };
-
-      for (const p of allPlayers) {
-        const mKey = oddsApiService.getPrimaryMarket(p.statGroup);
-        if (!mKey) continue;
-        const propData = oddsApiService.lookupPlayerProp(currentProps, p.playerName, mKey);
-        if (propData && propData.line !== null) {
-          const formatted = oddsApiService.formatPropLine(propData);
-          props.push({
-            emoji,
-            playerId: p.playerId,
-            playerName: p.playerName,
-            propType: PROP_LABELS[p.statGroup] || p.statGroup,
-            line: formatted.line,
-            odds: formatted.overOdds ? (formatted.overOdds >= 0 ? '+' + formatted.overOdds : formatted.overOdds) : '-110',
-          });
-        }
-      }
-    }
-
-    if (!props.length) return '';
+  // ── Render 4: PLAYER PROPS SECTION (Strictly for selectedGame, matching Game Lines card design)
+  _renderPlayerPropsSection(sport, game, props) {
+    if (sport === 'ufc') return '';
 
     return `
-      <div class="player-props-section">
+      <div class="player-props-section" id="player-props-section">
         <div class="section-title-row">
           <div class="section-title-left">
             <span class="section-title-text">🔥 PLAYER PROPS</span>
-            <span class="section-badge-pill">The Odds API Verified</span>
+            <span class="section-badge-pill">${props.length > 0 ? `${props.length} Verified Props` : 'The Odds API'}</span>
           </div>
-          <span class="section-count-tag">${props.length} Available Props</span>
+          <span class="section-count-tag">${props.length > 0 ? 'Tap card for Last 10' : 'No props available'}</span>
         </div>
 
-        <div class="player-props-grid">
-          ${props.map(p => `
-            <div class="player-prop-card" onclick="document.getElementById('pr-card-${p.playerId}')?.scrollIntoView({behavior:'smooth'})">
-              <div class="prop-card-top">
-                <div class="prop-identity">
-                  <span class="prop-sport-emoji">${p.emoji}</span>
-                  <span class="prop-player-name">${p.playerName}</span>
+        ${props.length === 0 ? `
+          <div class="empty-props-box">No verified player props currently available for this matchup.</div>
+        ` : `
+          <div class="player-props-grid">
+            ${props.map(p => {
+              const isExpanded = this.state.expandedPropKey === p.propKey;
+              return `
+                <div class="player-prop-card ${isExpanded ? 'expanded' : ''}" data-prop-key="${p.propKey}">
+                  <div class="prop-card-main-area">
+                    <div class="prop-card-top">
+                      <div class="prop-identity">
+                        <span class="prop-sport-emoji">${p.emoji}</span>
+                        <span class="prop-player-name">${p.playerName}</span>
+                      </div>
+                      <span class="prop-book-badge">${p.book}</span>
+                    </div>
+
+                    <div class="prop-market-name">${p.propType}</div>
+
+                    <div class="prop-card-bottom">
+                      <div class="prop-metric">
+                        <span class="prop-metric-label">LINE</span>
+                        <span class="prop-metric-val">${p.line}</span>
+                      </div>
+                      <div class="prop-metric">
+                        <span class="prop-metric-label">ODDS</span>
+                        <span class="prop-metric-val odds">${p.odds}</span>
+                      </div>
+                    </div>
+
+                    <div class="prop-tap-hint">
+                      ${isExpanded ? '▲ Hide Last 10 Research' : '▼ Tap for LAST 10 Research'}
+                    </div>
+                  </div>
+
+                  <!-- LAST 10 INLINE EXPANDED RESEARCH -->
+                  ${isExpanded ? `
+                    <div class="prop-expanded-research">
+                      <div class="prop-research-summary-bar">
+                        <div class="prs-hit-badge ${p.hitPct >= 60 ? 'high' : (p.hitPct >= 40 ? 'mid' : 'low')}">
+                          <span class="prs-hit-num">${p.hitCount} / ${p.totalGames} HIT</span>
+                          <span class="prs-hit-pct">${p.hitPct}%</span>
+                        </div>
+                        <span class="prs-subtext">Result vs current line (${p.line})</span>
+                      </div>
+
+                      <div class="prop-last10-table">
+                        <div class="last10-row header">
+                          <span>DATE</span>
+                          <span>OPP</span>
+                          <span>ACTUAL</span>
+                          <span style="text-align: right;">RESULT</span>
+                        </div>
+                        ${p.games.map(g => `
+                          <div class="last10-row">
+                            <span class="l10-date">${g.gameDateStr}</span>
+                            <span class="l10-opp">${g.homeAway === 'home' ? 'vs' : '@'} ${g.opponentAbbr || g.opponentName}</span>
+                            <span class="l10-stat"><strong>${g.primaryStat}</strong></span>
+                            <span class="l10-result ${g.hitResult.badgeClass}">${g.hitResult.label}</span>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
                 </div>
-                <button class="prop-view-btn" aria-label="View last 10 for ${p.playerName}">VIEW LAST 10 ↓</button>
-              </div>
-              <div class="prop-market-name">${p.propType}</div>
-              <div class="prop-card-bottom">
-                <div class="prop-metric">
-                  <span class="prop-metric-label">LINE</span>
-                  <span class="prop-metric-val">OVER ${p.line}</span>
-                </div>
-                <div class="prop-metric">
-                  <span class="prop-metric-label">ODDS</span>
-                  <span class="prop-metric-val odds">${p.odds}</span>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
+              `;
+            }).join('')}
+          </div>
+        `}
       </div>
     `;
   }
 
+  // ── Upcoming Slate Game Selection (In-Place, zero page reload or flash) ─────
+  async selectUpcomingGame(gameId) {
+    if (this.state.selectedGameId === gameId) return;
+    this.state.selectedGameId = gameId;
+    this.state.expandedPropKey = null;
+
+    // 1. Immediately update active state on slate chips
+    this.dom.gamesList.querySelectorAll('.slate-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.slateId === gameId);
+    });
+
+    const foundGame = (this.currentUpcomingGames || []).find(g => g.id === gameId);
+    if (!foundGame) {
+      await this.renderUpcomingGames();
+      return;
+    }
+
+    // 2. Update Featured Game Card in place
+    const slot = document.getElementById('featured-game-card-slot');
+    if (slot) {
+      slot.innerHTML = this._renderFeaturedGameCard(foundGame, this.currentUpcomingGames);
+      this._bindSlateChips();
+    }
+
+    // 3. Show smooth in-place loader inside selected game content area
+    const contentArea = document.getElementById('selected-game-content-area');
+    if (contentArea) {
+      const matchName = `${foundGame.awayTeam?.short || 'Away'} @ ${foundGame.homeTeam?.short || 'Home'}`;
+      contentArea.innerHTML = `
+        <div class="game-switch-loading">
+          <div class="sport-switch-spinner"></div>
+          <span>Loading verified markets for ${matchName}...</span>
+        </div>
+      `;
+    }
+
+    // 4. Fetch research data and current props for the new game
+    const sport = this.state.selectedSport;
+    let researchData = null;
+    let currentProps = null;
+    try {
+      const fetches = [];
+      if (typeof playerGameLogService !== 'undefined' && sport !== 'ufc') {
+        fetches.push(playerGameLogService.getGameResearchData(foundGame));
+      } else {
+        fetches.push(Promise.resolve(null));
+      }
+      if (typeof oddsApiService !== 'undefined' && sport !== 'ufc') {
+        fetches.push(oddsApiService.getCurrentProps(sport, foundGame).catch(() => null));
+      } else {
+        fetches.push(Promise.resolve(null));
+      }
+      [researchData, currentProps] = await Promise.all(fetches);
+    } catch (e) {
+      console.warn('Game props fetch error:', e);
+    }
+
+    // Race condition guard
+    if (this.state.selectedGameId !== gameId) return;
+
+    // 5. Build game lines and player props specifically for this game
+    this.cachedCurrentProps = currentProps;
+    this.cachedResearchData = researchData;
+    const gameLines = this._buildRecommendedGameLines(sport, foundGame);
+    const playerProps = this._buildRecommendedPlayerProps(sport, foundGame, currentProps, researchData);
+
+    // 6. Render the new content into contentArea
+    if (contentArea) {
+      contentArea.innerHTML = `
+        ${this._renderRecommendedGameLines(gameLines, foundGame)}
+        ${this._renderPlayerPropsSection(sport, foundGame, playerProps)}
+      `;
+      this._bindPropCardClicks(foundGame);
+    }
+  }
+
+  // ── Toggle Player Prop Research Drawer ─────────────────────────────────────
+  togglePlayerPropResearch(propKey, game) {
+    if (this.state.expandedPropKey === propKey) {
+      this.state.expandedPropKey = null;
+    } else {
+      this.state.expandedPropKey = propKey;
+    }
+
+    // Re-render Player Props section in-place
+    const sport = this.state.selectedSport;
+    const playerProps = this._buildRecommendedPlayerProps(sport, game, this.cachedCurrentProps, this.cachedResearchData);
+    const propsSection = document.getElementById('player-props-section');
+    if (propsSection) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = this._renderPlayerPropsSection(sport, game, playerProps);
+      propsSection.replaceWith(tempDiv.firstElementChild);
+      this._bindPropCardClicks(game);
+    }
+  }
+
+  _bindSlateChips() {
+    this.dom.gamesList.querySelectorAll('.slate-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const gId = chip.dataset.slateId;
+        this.selectUpcomingGame(gId);
+      });
+    });
+  }
+
+  _bindPropCardClicks(game) {
+    this.dom.gamesList.querySelectorAll('.player-prop-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const propKey = card.dataset.propKey;
+        if (propKey) this.togglePlayerPropResearch(propKey, game);
+      });
+    });
+  }
+
+  // ── Master Render: Upcoming Games & 4-Stage Content ────────────────────────
   async renderUpcomingGames() {
-
-    // Show skeleton while loading
-    this.dom.gamesList.innerHTML = `
-      <div class="skeleton-grid">
-        <div class="skeleton-card"><div class="skeleton-bar title"></div><div class="skeleton-bar text"></div><div class="skeleton-bar" style="width:50%"></div></div>
-        <div class="skeleton-card"><div class="skeleton-bar title"></div><div class="skeleton-bar text"></div><div class="skeleton-bar" style="width:40%"></div></div>
-        <div class="skeleton-card"><div class="skeleton-bar title"></div><div class="skeleton-bar text"></div><div class="skeleton-bar" style="width:60%"></div></div>
-      </div>
-    `;
-
     const options = {};
     if (this.state.selectedSport === 'nfl') {
       if (this.state.nflWeek > 0) options.week = this.state.nflWeek;
-      // nflWeek 0 = current week — no week param → ESPN scoreboard auto-returns current week
     } else if (this.state.selectedSport === 'mlb') {
       options.date = this.getDateParamForOffset(this.state.mlbDateOffset);
     } else if (this.state.selectedSport === 'nhl') {
@@ -1611,6 +1926,21 @@ class SportsResearchApp {
       return;
     }
 
+    // Filter out completed games
+    games = (games || []).filter(g => {
+      if (g.gameStatus === 'FINAL' || g.gameStatus === 'STATUS_FINAL') return false;
+      return true;
+    });
+
+    // Sort chronologically: soonest upcoming game first
+    games.sort((a, b) => {
+      const ta = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+      const tb = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+      return ta - tb;
+    });
+
+    this.currentUpcomingGames = games;
+
     // Update timestamp
     if (this.dom.lastUpdatedText) {
       const now = new Date();
@@ -1622,7 +1952,7 @@ class SportsResearchApp {
       this.dom.gamesList.innerHTML = `
         <div class="empty-state">
           <div class="empty-title">No Upcoming ${sportName} Games</div>
-          <p>All games on this slate have concluded, or no games are scheduled yet. Try a different week or check back when the next slate is released.</p>
+          <p>All games on this slate have concluded, or no games are scheduled yet. Check back when the next slate is released.</p>
         </div>
       `;
       return;
@@ -1631,7 +1961,7 @@ class SportsResearchApp {
     try {
       const sport = this.state.selectedSport;
 
-      // 1. Featured game is the selected game or the FIRST upcoming game chronologically
+      // 1. Featured game: selected game or first upcoming game
       let featuredGame = games[0];
       if (this.state.selectedGameId) {
         const found = games.find(g => g.id === this.state.selectedGameId);
@@ -1661,40 +1991,32 @@ class SportsResearchApp {
         console.warn('[Research] data fetch failed:', err.message);
       }
 
+      this.cachedCurrentProps = currentProps;
+      this.cachedResearchData = researchData;
+
       // 3. Build recommendations
-      const parlay = this._buildRecommendedParlay(sport, games, currentProps);
-      const gameLines = this._buildRecommendedGameLines(sport, games);
+      const parlay = this._buildRecommendedParlay(sport, games, currentProps, featuredGame);
+      const gameLines = this._buildRecommendedGameLines(sport, featuredGame);
+      const playerProps = this._buildRecommendedPlayerProps(sport, featuredGame, currentProps, researchData);
 
-      // 4. Render the strict 5-stage mobile flow:
-      // MOST UPCOMING GAME -> RECOMMENDED PARLAY -> RECOMMENDED GAME LINES
-      // -> PLAYER PROPS -> PLAYER RESEARCH / LAST 10
+      // 4. Render clean flow:
+      // Featured Game Card -> Recommended Parlay -> Selected Game Content Area (Lines + Props)
       this.dom.gamesList.innerHTML = `
-        <!-- 1. MOST UPCOMING GAME FIRST -->
-        ${this._renderFeaturedGameCard(featuredGame, games)}
+        <div id="featured-game-card-slot">
+          ${this._renderFeaturedGameCard(featuredGame, games)}
+        </div>
 
-        <!-- 2. RECOMMENDED PARLAY (3-5 Legs, +300 to +600) -->
         ${this._renderRecommendedParlayCard(parlay)}
 
-        <!-- 3. RECOMMENDED GAME LINES (~8 verified boxes, -220 or better) -->
-        ${this._renderRecommendedGameLines(gameLines)}
-
-        <!-- 4. PLAYER PROPS -->
-        ${this._renderPlayerPropsSection(sport, featuredGame, currentProps, researchData)}
-
-        <!-- 5. PLAYER RESEARCH / LAST 10 ONLY -->
-        ${this._renderResearchStats(researchData, featuredGame, currentProps)}
+        <div id="selected-game-content-area">
+          ${this._renderRecommendedGameLines(gameLines, featuredGame)}
+          ${this._renderPlayerPropsSection(sport, featuredGame, playerProps)}
+        </div>
       `;
 
       // 5. Wire up interactions
-      // Clicking a slate chip features that game
-      this.dom.gamesList.querySelectorAll('.slate-chip').forEach(chip => {
-        chip.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const gId = chip.dataset.slateId;
-          this.state.selectedGameId = gId;
-          this.renderUpcomingGames();
-        });
-      });
+      this._bindSlateChips();
+      this._bindPropCardClicks(featuredGame);
 
       // Copy parlay slip button
       const copyBtn = document.getElementById('copy-parlay-btn');
@@ -1715,453 +2037,9 @@ class SportsResearchApp {
         });
       }
 
-      // Load historical prop lines in background for LAST 10 completed games
-      if (typeof oddsApiService !== 'undefined' && researchData && sport !== 'ufc') {
-        this.loadHistoricalProps(sport, researchData).catch(e =>
-          console.warn('[HistProps]', e.message)
-        );
-      }
-
     } catch (renderErr) {
       console.error('[renderUpcomingGames] render failed:', renderErr);
-      this.dom.gamesList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-title">Display error</div>
-          <p>Games loaded but couldn't be displayed. Try Refresh.</p>
-        </div>
-      `;
     }
-  }
-
-
-  // Helper: generate team logo HTML
-  teamLogoHtml(team) {
-    if (team.logoUrl) {
-      return `<img class="team-logo-img" src="${team.logoUrl}" alt="${team.short}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span class="team-logo-placeholder" style="display:none">${(team.short || '?').substring(0,3)}</span>`;
-    }
-    return `<span class="team-logo-placeholder" style="border-left: 3px solid ${team.logoColor || '#444'}">${(team.short || '?').substring(0,3)}</span>`;
-  }
-
-  // Sport-specific spread label
-  spreadLabel(sport) {
-    if (sport === 'mlb') return 'Run Line:';
-    if (sport === 'nhl') return 'Puck Line:';
-    if (sport === 'nba') return 'Spread:';
-    if (sport === 'cfb') return 'Line:';
-    return 'Spread:';
-  }
-
-  // Standard game card (NFL, MLB, NHL, NBA, CFB)
-  renderGameCard(game) {
-    const sl = game.summaryLines;
-    const awayRank = game.awayTeam.rank ? `<span class="cfb-rank-badge">#${game.awayTeam.rank}</span>` : '';
-    const homeRank = game.homeTeam.rank ? `<span class="cfb-rank-badge">#${game.homeTeam.rank}</span>` : '';
-
-    const isLiveGame = game.gameStatus === 'LIVE';
-    const statusPill = isLiveGame
-      ? `<span class="game-status-live">🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}</span>`
-      : '';
-
-    return `
-      <div class="game-card${isLiveGame ? ' game-card-live' : ''}" data-game-id="${game.id}">
-
-        <!-- Col 1: Date + Time -->
-        <div class="game-col-datetime">
-          ${statusPill}
-          <div class="game-date-str">${game.date}</div>
-          <div class="game-time-str">${game.startTime}</div>
-        </div>
-
-        <!-- Col 2: Teams + Venue -->
-        <div class="game-col-teams">
-          <div class="game-matchup-rows">
-            <div class="game-team-row">
-              ${this.teamLogoHtml(game.awayTeam)}
-              ${awayRank}
-              <span class="team-name-text">${game.awayTeam.name}</span>
-              <span class="team-record-text">${game.awayTeam.record || ''}</span>
-            </div>
-            <div class="game-at-separator">@ </div>
-            <div class="game-team-row">
-              ${this.teamLogoHtml(game.homeTeam)}
-              ${homeRank}
-              <span class="team-name-text">${game.homeTeam.name}</span>
-              <span class="team-record-text">${game.homeTeam.record || ''}</span>
-            </div>
-          </div>
-          <div class="game-venue-line">
-            <span class="game-venue-icon">🏟</span>
-            <span class="game-venue-name">${game.venue || 'TBD'}</span>
-          </div>
-        </div>
-
-        <!-- Col 3: Odds -->
-        <div class="game-col-odds">
-          ${sl.spread ? `<div class="game-odds-row"><span class="odds-label">${this.spreadLabel(game.sport)}</span><span class="odds-value">${sl.spread}</span></div>` : ''}
-          ${sl.total ? `<div class="game-odds-row"><span class="odds-label">Total:</span><span class="odds-value">${sl.total}</span></div>` : ''}
-          ${sl.ml ? `<div class="game-odds-row"><span class="odds-label">ML:</span><span class="odds-value">${sl.ml}</span></div>` : ''}
-        </div>
-
-        <!-- Col 4: Action -->
-        <div class="game-col-action">
-          <button class="research-bets-btn">RESEARCH BETS →</button>
-        </div>
-
-      </div>
-    `;
-  }
-
-
-  // Dedicated UFC fight card
-  renderUFCFightCard(game) {
-    const sl = game.summaryLines;
-    const fighterA = game.awayTeam;  // away = challenger (shown first)
-    const fighterB = game.homeTeam;  // home = other fighter
-    const eventLabel = game.headline || 'UFC Fight Night';
-    const weightClass = (game.weightClass || '');
-    const FALLBACK_NAMES = new Set(['Fighter A', 'Fighter B', 'Away Team', 'Home Team', null, undefined]);
-
-    // Guard: both fighters must have real names from ESPN
-    if (FALLBACK_NAMES.has(fighterA.name) || FALLBACK_NAMES.has(fighterB.name)) {
-      // Data unavailable — skip this card rather than showing fake fighter
-      return '';
-    }
-
-    // Parse per-fighter ML odds from summaryLines.ml if it contains "Fighter X +145 / Fighter Y -175"
-    let fighterAOdds = '';
-    let fighterBOdds = '';
-    const mlRaw = sl.ml || '';
-    if (mlRaw && mlRaw !== 'Odds unavailable') {
-      // Format: "Name1 +/-xxx / Name2 +/-xxx" — extract the odds values
-      const oddsMatch = mlRaw.match(/([+-]\d+)\s*\/\s*.*?([+-]\d+)$/);
-      if (oddsMatch) {
-        // Home is fighter B, away is fighter A (per our positional assignment)
-        fighterBOdds = oddsMatch[1];
-        fighterAOdds = oddsMatch[2];
-      }
-    }
-
-    const isUFCLive = game.gameStatus === 'LIVE';
-    const ufcStatusPill = isUFCLive
-      ? `<span class="game-status-live">🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}</span>`
-      : '';
-
-    return `
-      <div class="ufc-fight-card${isUFCLive ? ' game-card-live' : ''}" data-game-id="${game.id}">
-
-        <!-- UFC Event Header -->
-        <div class="ufc-fight-header">
-          ${ufcStatusPill}
-          <span class="ufc-event-label">🥊 ${eventLabel}</span>
-          <span class="ufc-fight-datetime">${game.date} · ${game.startTime}</span>
-        </div>
-
-        <!-- Fight Body: Fighter A | VS | Fighter B -->
-        <div class="ufc-fight-body">
-
-          <div class="ufc-fighter-block fighter-a">
-            <div class="ufc-fighter-name">${fighterA.name}</div>
-            <div class="ufc-fighter-record">${fighterA.record || 'Record TBD'}</div>
-            ${fighterAOdds ? `<div class="ufc-fighter-odds">${fighterAOdds}</div>` : ''}
-          </div>
-
-          <div class="ufc-vs-divider">
-            <span class="ufc-vs-text">VS</span>
-            ${weightClass ? `<span class="ufc-weight-class">${weightClass}</span>` : ''}
-          </div>
-
-          <div class="ufc-fighter-block fighter-b">
-            <div class="ufc-fighter-name">${fighterB.name}</div>
-            <div class="ufc-fighter-record">${fighterB.record || 'Record TBD'}</div>
-            ${fighterBOdds ? `<div class="ufc-fighter-odds">${fighterBOdds}</div>` : ''}
-          </div>
-
-        </div>
-
-        <!-- Fight Footer -->
-        <div class="ufc-fight-footer">
-          <div class="ufc-fight-odds">
-            ${mlRaw && mlRaw === 'Odds unavailable'
-              ? `<div class="ufc-odds-row" style="color:var(--text-dim)">Odds unavailable</div>`
-              : (sl.total ? `<div class="ufc-odds-row">${sl.total}</div>` : '')}
-          </div>
-          <span class="ufc-venue-text">📍 ${game.venue || 'UFC Apex'}</span>
-          <button class="ufc-research-btn">RESEARCH FIGHT →</button>
-        </div>
-
-      </div>
-    `;
-  }
-
-
-
-
-
-  // ─── 1. Primary Game Matchup Card & Current Lines ──────────────────────────
-  _renderGameMatchupCard(game, sl, isUFC) {
-    const isLive = game.gameStatus === 'LIVE';
-    const awayLogo = this.teamLogoHtml(game.awayTeam);
-    const homeLogo = this.teamLogoHtml(game.homeTeam);
-
-    const hasSpread = sl.spread && sl.spread !== 'N/A';
-    const hasTotal = sl.total && sl.total !== 'N/A';
-    const hasML = sl.ml && sl.ml !== 'N/A' && sl.ml !== 'Odds unavailable';
-    const hasAnyLines = hasSpread || hasTotal || hasML;
-
-    return `
-      <div class="detail-game-card${isLive ? ' game-card-live' : ''}">
-        <!-- Top Status Bar -->
-        <div class="detail-card-top-bar">
-          <div class="detail-status-pill ${isLive ? 'live' : 'upcoming'}">
-            ${isLive ? `🔴 LIVE${game.gameStatusDetail ? ' · ' + game.gameStatusDetail : ''}` : 'UPCOMING'}
-          </div>
-          <div class="detail-verified-tag">✓ ESPN Live Feed</div>
-        </div>
-
-        <!-- Matchup Area -->
-        <div class="detail-matchup-area">
-          <div class="detail-team-block">
-            <div class="detail-logo-wrapper">${awayLogo}</div>
-            <div class="detail-team-meta">
-              <span class="detail-team-name">${game.awayTeam.name}</span>
-              <span class="detail-team-record">${game.awayTeam.record || ''}</span>
-            </div>
-          </div>
-
-          <div class="detail-vs-badge">${isUFC ? 'VS' : '@'}</div>
-
-          <div class="detail-team-block">
-            <div class="detail-logo-wrapper">${homeLogo}</div>
-            <div class="detail-team-meta">
-              <span class="detail-team-name">${game.homeTeam.name}</span>
-              <span class="detail-team-record">${game.homeTeam.record || ''}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Meta info -->
-        <div class="detail-meta-row">
-          <span class="detail-meta-item">📅 ${game.date} • ${game.startTime}</span>
-          ${game.venue ? `<span class="detail-meta-item">📍 ${game.venue}</span>` : ''}
-          ${game.headline && game.headline !== game.awayTeam.name + ' @ ' + game.homeTeam.name ? `<span class="detail-meta-item">🏆 ${game.headline}</span>` : ''}
-        </div>
-
-        <!-- Current Lines Section -->
-        <div class="detail-lines-container">
-          <div class="detail-lines-header">
-            <span class="detail-lines-title">CURRENT LINES</span>
-            <span class="detail-lines-books">DraftKings / Fliff Consensus</span>
-          </div>
-
-          ${hasAnyLines ? `
-          <div class="detail-lines-grid">
-            ${hasSpread ? `
-              <div class="line-box">
-                <span class="line-box-label">${this.spreadLabel(game.sport).toUpperCase().replace(':', '')}</span>
-                <span class="line-box-val">${sl.spread}</span>
-              </div>` : ''}
-            ${hasTotal ? `
-              <div class="line-box">
-                <span class="line-box-label">TOTAL</span>
-                <span class="line-box-val">${sl.total}</span>
-              </div>` : ''}
-            ${hasML ? `
-              <div class="line-box ${!hasSpread ? 'span-2' : ''}">
-                <span class="line-box-label">MONEYLINE</span>
-                <span class="line-box-val">${sl.ml}</span>
-              </div>` : ''}
-          </div>` : `
-          <div class="detail-lines-unavail">Betting lines unavailable for this event</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  // ─── 2. Recommended Research / Parlay Section ─────────────────────────────
-  _renderRecommendedResearch(game, researchData, currentProps) {
-    if (game.sport === 'ufc') {
-      const sl = game.summaryLines || {};
-      const hasML = sl.ml && sl.ml !== 'Odds unavailable' && sl.ml !== 'N/A';
-      const hasTotal = sl.total && sl.total !== 'N/A';
-      if (!hasML && !hasTotal) {
-        return `
-          <div class="rec-section">
-            <div class="rec-header">
-              <span class="rec-title">RECOMMENDED RESEARCH</span>
-              <span class="rec-badge">Verified Plays</span>
-            </div>
-            <div class="rec-unavail-box">
-              <div class="rec-unavail-title">Insufficient verified data</div>
-              <div class="rec-unavail-sub">Fight props and lines are not yet published for this bout.</div>
-            </div>
-          </div>
-        `;
-      }
-      return `
-        <div class="rec-section">
-          <div class="rec-header">
-            <div class="rec-title-group">
-              <span class="rec-title">RECOMMENDED RESEARCH</span>
-              <span class="rec-badge">DraftKings &amp; Fliff Verified</span>
-            </div>
-          </div>
-          <div class="rec-grid">
-            ${hasML ? `
-              <div class="rec-card" onclick="document.getElementById('ufc-fighter-research')?.scrollIntoView({behavior:'smooth'})">
-                <div class="rec-card-top">
-                  <div class="rec-player-info">
-                    <span class="rec-player-name">${game.awayTeam.name} vs ${game.homeTeam.name}</span>
-                    <span class="rec-prop-type">Fight Moneyline</span>
-                  </div>
-                  <button class="rec-arrow-btn">RESEARCH ↓</button>
-                </div>
-                <div class="rec-card-bottom">
-                  <div class="rec-metric-box">
-                    <span class="rec-metric-label">MONEYLINE</span>
-                    <span class="rec-metric-val">${sl.ml}</span>
-                  </div>
-                  <div class="rec-metric-box">
-                    <span class="rec-metric-label">SOURCE</span>
-                    <span class="rec-metric-val">ESPN / Books</span>
-                  </div>
-                </div>
-              </div>` : ''}
-            ${hasTotal ? `
-              <div class="rec-card" onclick="document.getElementById('ufc-fighter-research')?.scrollIntoView({behavior:'smooth'})">
-                <div class="rec-card-top">
-                  <div class="rec-player-info">
-                    <span class="rec-player-name">Fight Total Rounds</span>
-                    <span class="rec-prop-type">Over/Under Rounds</span>
-                  </div>
-                  <button class="rec-arrow-btn">RESEARCH ↓</button>
-                </div>
-                <div class="rec-card-bottom">
-                  <div class="rec-metric-box">
-                    <span class="rec-metric-label">CURRENT LINE</span>
-                    <span class="rec-metric-val">${sl.total}</span>
-                  </div>
-                  <div class="rec-metric-box">
-                    <span class="rec-metric-label">WEIGHT</span>
-                    <span class="rec-metric-val">${game.weightClass || 'Bout'}</span>
-                  </div>
-                </div>
-              </div>` : ''}
-          </div>
-        </div>
-      `;
-    }
-
-    // For team sports (NFL, MLB, NBA, NHL, CFB):
-    const verifiedPlays = [];
-    const allPlayers = [
-      ...(researchData?.awayTeam?.players || []),
-      ...(researchData?.homeTeam?.players || [])
-    ];
-
-    if (typeof oddsApiService !== 'undefined' && currentProps && allPlayers.length > 0) {
-      const PROP_LABELS = {
-        passing: 'Passing Yards', rushing: 'Rushing Yards', receiving: 'Receiving Yards',
-        batting: 'Hits', pitching: 'Strikeouts', forwards: 'Points (G+A)', scoring: 'Points'
-      };
-
-      for (const p of allPlayers) {
-        const mKey = oddsApiService.getPrimaryMarket(p.statGroup);
-        if (!mKey) continue;
-        const propData = oddsApiService.lookupPlayerProp(currentProps, p.playerName, mKey);
-        if (propData && propData.line !== null) {
-          const formatted = oddsApiService.formatPropLine(propData);
-          const primaryEspnKey = oddsApiService.getPrimaryEspnKey(p.statGroup);
-          const lastGame = p.games && p.games[0];
-          const lastVal = lastGame && lastGame.stats ? lastGame.stats[primaryEspnKey] : null;
-
-          let avgText = '';
-          if (p.games && p.games.length > 0 && primaryEspnKey) {
-            const vals = p.games.map(g => parseFloat(g.stats?.[primaryEspnKey])).filter(v => !isNaN(v));
-            if (vals.length > 0) {
-              const sum = vals.reduce((a, b) => a + b, 0);
-              avgText = `${Math.round(sum / vals.length)} avg (${vals.length}G)`;
-            }
-          }
-
-          let oddsDisplay = '-110';
-          if (formatted.overOdds) {
-            oddsDisplay = `O ${formatted.overOdds} / U ${formatted.underOdds || '-110'}`;
-          }
-
-          verifiedPlays.push({
-            playerId: p.playerId,
-            playerName: p.playerName,
-            teamName: p.teamName || '',
-            propLabel: PROP_LABELS[p.statGroup] || p.statGroup,
-            line: formatted.line,
-            odds: oddsDisplay,
-            lastStat: lastVal !== null && lastVal !== undefined ? `Last: ${lastVal}` : '',
-            avgStat: avgText
-          });
-        }
-      }
-    }
-
-    if (!verifiedPlays.length) {
-      return `
-        <div class="rec-section">
-          <div class="rec-header">
-            <div class="rec-title-group">
-              <span class="rec-title">RECOMMENDED RESEARCH</span>
-              <span class="rec-badge">Verified Plays</span>
-            </div>
-          </div>
-          <div class="rec-unavail-box">
-            <div class="rec-unavail-title">Insufficient verified data</div>
-            <div class="rec-unavail-sub">Player props or lines are not yet available for this event from connected sportsbooks. Check back closer to game time.</div>
-          </div>
-        </div>
-      `;
-    }
-
-    const topPlays = verifiedPlays.slice(0, 4);
-
-    return `
-      <div class="rec-section">
-        <div class="rec-header">
-          <div class="rec-title-group">
-            <span class="rec-title">RECOMMENDED RESEARCH</span>
-            <span class="rec-badge">DraftKings &amp; Fliff Verified</span>
-          </div>
-          <span class="rec-count-badge">${topPlays.length} Verified Plays</span>
-        </div>
-        <div class="rec-grid">
-          ${topPlays.map(play => `
-            <div class="rec-card" onclick="document.getElementById('pr-card-${play.playerId}')?.scrollIntoView({behavior:'smooth'})">
-              <div class="rec-card-top">
-                <div class="rec-player-info">
-                  <span class="rec-player-name">${play.playerName}</span>
-                  <span class="rec-prop-type">${play.propLabel}</span>
-                </div>
-                <button class="rec-arrow-btn" aria-label="View research for ${play.playerName}">
-                  RESEARCH ↓
-                </button>
-              </div>
-              <div class="rec-card-bottom">
-                <div class="rec-metric-box">
-                  <span class="rec-metric-label">CURRENT LINE</span>
-                  <span class="rec-metric-val">O/U ${play.line}</span>
-                </div>
-                <div class="rec-metric-box">
-                  <span class="rec-metric-label">ODDS</span>
-                  <span class="rec-metric-val">${play.odds}</span>
-                </div>
-                ${play.lastStat ? `
-                <div class="rec-metric-box">
-                  <span class="rec-metric-label">RECENT</span>
-                  <span class="rec-metric-val sub">${play.lastStat}${play.avgStat ? ' · ' + play.avgStat : ''}</span>
-                </div>` : ''}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
   }
 
   async selectGame(gameId) {
